@@ -1,0 +1,42 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Installera Python-beroenden med UV
+    cmds:
+      - uv sync
+
+  add:
+    desc: Lägg till paket (task py:add -- paketnamn)
+    cmds:
+      - uv add {{.CLI_ARGS}}
+
+  remove:
+    desc: Ta bort paket (task py:remove -- paketnamn)
+    cmds:
+      - uv remove {{.CLI_ARGS}}
+
+  run:
+    desc: Kör Python-script (task py:run -- script.py)
+    cmds:
+      - uv run python {{.CLI_ARGS}}
+
+  shell:
+    desc: Starta Python REPL i virtuell miljö
+    cmds:
+      - uv run python
+
+  lint:
+    desc: Kör linting med ruff
+    cmds:
+      - uv run ruff check .
+
+  format:
+    desc: Formatera kod med ruff
+    cmds:
+      - uv run ruff format .
+
+  lock:
+    desc: Uppdatera uv.lock
+    cmds:
+      - uv lock

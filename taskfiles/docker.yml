@@ -1,0 +1,38 @@
+version: '3'
+
+tasks:
+  up:
+    desc: Starta Docker-containrar
+    dir: docker
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: Stoppa Docker-containrar
+    dir: docker
+    cmds:
+      - docker compose down
+
+  build:
+    desc: Bygg Docker-images
+    dir: docker
+    cmds:
+      - docker compose build
+
+  logs:
+    desc: Visa loggar från containrar
+    dir: docker
+    cmds:
+      - docker compose logs -f
+
+  ps:
+    desc: Visa körande containrar
+    dir: docker
+    cmds:
+      - docker compose ps
+
+  clean:
+    desc: Ta bort containrar, volymer och nätverk
+    dir: docker
+    cmds:
+      - docker compose down -v --remove-orphans

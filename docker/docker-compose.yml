@@ -1,0 +1,22 @@
+services:
+  dbt:
+    build:
+      context: .
+      dockerfile: Dockerfile.dbt
+    volumes:
+      - ../dbt:/usr/app/dbt
+      - ../data:/usr/app/data
+    env_file:
+      - ../.env
+    working_dir: /usr/app/dbt
+
+  yarp:
+    image: mcr.microsoft.com/dotnet/yarp:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./yarp-config.json:/app/config/yarp.json:ro
+    env_file:
+      - ../.env
+    profiles:
+      - proxy

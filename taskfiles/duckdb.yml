@@ -1,0 +1,35 @@
+version: '3'
+
+vars:
+  DB_FILE: data/warehouse.duckdb
+
+tasks:
+  cli:
+    desc: Öppna DuckDB CLI
+    cmds:
+      - duckdb {{.DB_FILE}}
+
+  query:
+    desc: Kör en SQL-fråga (task db:query -- "SELECT 1")
+    cmds:
+      - duckdb {{.DB_FILE}} "{{.CLI_ARGS}}"
+
+  migrate:
+    desc: Kör dbmate-migrationer
+    cmds:
+      - dbmate --url "sqlite:{{.DB_FILE}}" up
+
+  migrate-new:
+    desc: Skapa ny migration (task db:migrate-new -- namn)
+    cmds:
+      - dbmate --url "sqlite:{{.DB_FILE}}" new {{.CLI_ARGS}}
+
+  migrate-status:
+    desc: Visa migrationsstatus
+    cmds:
+      - dbmate --url "sqlite:{{.DB_FILE}}" status
+
+  migrate-rollback:
+    desc: Rulla tillbaka senaste migrationen
+    cmds:
+      - dbmate --url "sqlite:{{.DB_FILE}}" down

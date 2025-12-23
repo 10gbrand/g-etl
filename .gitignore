@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Data directory - keep structure, ignore files
+data/**/*
+!data/**/.gitkeep
+
+# DuckDB database files
+*.duckdb
+*.duckdb.wal

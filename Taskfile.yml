@@ -1,0 +1,26 @@
+version: '3'
+
+includes:
+  docker: ./taskfiles/docker.yml
+  db: ./taskfiles/duckdb.yml
+  dbt: ./taskfiles/dbt.yml
+  py: ./taskfiles/python.yml
+
+tasks:
+  default:
+    desc: Visa tillgängliga kommandon
+    cmds:
+      - task --list
+
+  init:
+    desc: Initiera hela projektet (Python, Docker, etc.)
+    cmds:
+      - task py:install
+      - echo "Projekt initierat!"
+
+  clean:
+    desc: Rensa genererade filer och cache
+    cmds:
+      - rm -rf .venv __pycache__ .pytest_cache
+      - rm -rf dbt/target dbt/logs dbt/dbt_packages
+      - echo "Städat klart!"
