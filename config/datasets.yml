@@ -1,0 +1,70 @@
+datasets:
+  - id: naturreservat
+    name: Naturreservat
+    description: Naturreservat från Naturvårdsverket
+    dbt_model: raw.naturreservat
+    source_type: wfs
+    enabled: true
+
+  - id: nyckelbiotoper
+    name: Nyckelbiotoper
+    description: Nyckelbiotoper från Skogsstyrelsen
+    dbt_model: raw.nyckelbiotoper
+    source_type: wfs
+    enabled: true
+
+  - id: n2000
+    name: Natura 2000
+    description: Natura 2000-områden
+    dbt_model: raw.natura2000
+    source_type: wfs
+    enabled: true
+
+  - id: riksintressen_naturvard
+    name: Riksintressen naturvård
+    description: Riksintressen för naturvård
+    dbt_model: raw.riksintressen_naturvard
+    source_type: wfs
+    enabled: true
+
+  - id: riksintressen_friluftsliv
+    name: Riksintressen friluftsliv
+    description: Riksintressen för friluftsliv
+    dbt_model: raw.riksintressen_friluftsliv
+    source_type: wfs
+    enabled: true
+
+  - id: strandskydd
+    name: Strandskydd
+    description: Strandskyddsområden
+    dbt_model: raw.strandskydd
+    source_type: wfs
+    enabled: false
+
+  - id: biotopskydd
+    name: Biotopskyddsområden
+    description: Biotopskyddsområden
+    dbt_model: raw.biotopskydd
+    source_type: wfs
+    enabled: true
+
+  - id: naturminnen
+    name: Naturminnen
+    description: Naturminnen
+    dbt_model: raw.naturminnen
+    source_type: wfs
+    enabled: true
+
+  - id: nationalparker
+    name: Nationalparker
+    description: Sveriges nationalparker
+    dbt_model: raw.nationalparker
+    source_type: wfs
+    enabled: true
+
+  - id: vattenskyddsomraden
+    name: Vattenskyddsområden
+    description: Vattenskyddsområden
+    dbt_model: raw.vattenskyddsomraden
+    source_type: wfs
+    enabled: true

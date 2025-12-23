@@ -5,6 +5,7 @@ includes:
   db: ./taskfiles/duckdb.yml
   dbt: ./taskfiles/dbt.yml
   py: ./taskfiles/python.yml
+  admin: ./taskfiles/admin.yml
 
 tasks:
   default:

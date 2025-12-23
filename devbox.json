@@ -6,8 +6,7 @@
     "claude-code@latest",
     "uv@latest",
     "duckdb@latest",
-    "dbt@latest",
-    "dbmate@latest"
+    "dbt@latest"
   ],
   "shell": {
     "init_hook": [

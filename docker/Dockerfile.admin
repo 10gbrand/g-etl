@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Copy project files
+COPY pyproject.toml .
+COPY scripts/ scripts/
+COPY config/ config/
+
+# Install dependencies
+RUN uv sync --no-dev
+
+# Set environment for terminal
+ENV TERM=xterm-256color
+ENV PYTHONUNBUFFERED=1
+
+# Default command
+ENTRYPOINT ["uv", "run", "python", "-m", "scripts.admin.app"]
+CMD ["--mock"]

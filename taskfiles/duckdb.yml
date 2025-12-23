@@ -14,22 +14,49 @@ tasks:
     cmds:
       - duckdb {{.DB_FILE}} "{{.CLI_ARGS}}"
 
-  migrate:
-    desc: Kör dbmate-migrationer
+  init:
+    desc: Skapa databas och kör init-migration
     cmds:
-      - dbmate --url "sqlite:{{.DB_FILE}}" up
+      - duckdb {{.DB_FILE}} < migrations/20251223184625_init.sql
+      - echo "Databas initierad med extensions och schemas"
+
+  migrate:
+    desc: Kör alla migrationer i ordning
+    cmds:
+      - |
+        for f in migrations/*.sql; do
+          echo "Kör: $f"
+          duckdb {{.DB_FILE}} < "$f"
+        done
 
   migrate-new:
     desc: Skapa ny migration (task db:migrate-new -- namn)
     cmds:
-      - dbmate --url "sqlite:{{.DB_FILE}}" new {{.CLI_ARGS}}
+      - |
+        timestamp=$(date +%Y%m%d%H%M%S)
+        filename="migrations/${timestamp}_{{.CLI_ARGS}}.sql"
+        echo "-- Migration: {{.CLI_ARGS}}" > "$filename"
+        echo "-- Created: $(date +%Y-%m-%d)" >> "$filename"
+        echo "-- Description: " >> "$filename"
+        echo "" >> "$filename"
+        echo "Skapad: $filename"
 
   migrate-status:
-    desc: Visa migrationsstatus
+    desc: Visa körda migrationer
     cmds:
-      - dbmate --url "sqlite:{{.DB_FILE}}" status
+      - duckdb {{.DB_FILE}} "SELECT * FROM _migrations ORDER BY id;"
 
-  migrate-rollback:
-    desc: Rulla tillbaka senaste migrationen
+  extensions:
+    desc: Visa installerade extensions
     cmds:
-      - dbmate --url "sqlite:{{.DB_FILE}}" down
+      - duckdb {{.DB_FILE}} "SELECT extension_name, loaded, installed FROM duckdb_extensions() WHERE installed;"
+
+  schemas:
+    desc: Visa schemas i databasen
+    cmds:
+      - duckdb {{.DB_FILE}} "SELECT schema_name FROM information_schema.schemata;"
+
+  tables:
+    desc: Visa alla tabeller
+    cmds:
+      - duckdb {{.DB_FILE}} "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'pg_catalog');"

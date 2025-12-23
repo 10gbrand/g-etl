@@ -1,0 +1,30 @@
+version: '3'
+
+tasks:
+  run:
+    desc: Starta admin TUI lokalt
+    cmds:
+      - uv run python -m scripts.admin.app
+
+  mock:
+    desc: Starta admin TUI i mock-läge
+    cmds:
+      - uv run python -m scripts.admin.app --mock
+
+  docker:
+    desc: Starta admin TUI i Docker-container
+    dir: docker
+    cmds:
+      - docker compose run --rm -it admin
+
+  docker-mock:
+    desc: Starta admin TUI i Docker (mock-läge)
+    dir: docker
+    cmds:
+      - docker compose run --rm -it admin --mock
+
+  docker-build:
+    desc: Bygg admin Docker-image
+    dir: docker
+    cmds:
+      - docker compose build admin

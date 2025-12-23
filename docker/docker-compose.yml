@@ -1,4 +1,17 @@
 services:
+  admin:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.admin
+    volumes:
+      - ../data:/app/data
+      - ../dbt:/app/dbt
+      - ../config:/app/config
+    env_file:
+      - ../.env
+    tty: true
+    stdin_open: true
+
   dbt:
     build:
       context: .
