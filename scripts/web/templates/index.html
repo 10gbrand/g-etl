@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-ETL Admin</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --text: #eee;
+            --text-muted: #888;
+            --primary: #e94560;
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --error: #f87171;
+            --border: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        header {
+            background: var(--bg-secondary);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            background: var(--success);
+            color: #000;
+        }
+
+        .status-badge.running {
+            background: var(--warning);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            padding: 1rem;
+            max-width: 1600px;
+            margin: 0 auto;
+            min-height: calc(100vh - 80px);
+        }
+
+        @media (max-width: 1024px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--bg-secondary);
+            border-radius: 0.5rem;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 1.125rem;
+            font-weight: 500;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        select, button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+
+        select:focus, button:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+
+        button {
+            background: var(--primary);
+            border-color: var(--primary);
+            font-weight: 500;
+        }
+
+        button:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: var(--bg-card);
+            border-color: var(--border);
+        }
+
+        button.success {
+            background: var(--success);
+            color: #000;
+        }
+
+        button.warning {
+            background: var(--warning);
+            color: #000;
+        }
+
+        .dataset-list {
+            max-height: calc(100vh - 300px);
+            overflow-y: auto;
+        }
+
+        .dataset-item {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .dataset-item:hover {
+            background: var(--bg-card);
+        }
+
+        .dataset-item.selected {
+            background: rgba(233, 69, 96, 0.2);
+        }
+
+        .dataset-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .dataset-item input[type="checkbox"] {
+            width: 1rem;
+            height: 1rem;
+            accent-color: var(--primary);
+        }
+
+        .dataset-info {
+            flex: 1;
+        }
+
+        .dataset-name {
+            font-weight: 500;
+        }
+
+        .dataset-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .type-badge {
+            font-size: 0.75rem;
+            padding: 0.125rem 0.5rem;
+            border-radius: 0.25rem;
+            background: var(--bg-card);
+            color: var(--text-muted);
+        }
+
+        .controls {
+            padding: 1rem;
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            border-top: 1px solid var(--border);
+        }
+
+        .log-panel {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .log-output {
+            flex: 1;
+            padding: 1rem;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.875rem;
+            background: #0a0a0a;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-line {
+            padding: 0.125rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .log-time {
+            color: var(--text-muted);
+            margin-right: 0.5rem;
+        }
+
+        .progress-bar {
+            margin: 1rem;
+            background: var(--bg);
+            border-radius: 0.25rem;
+            height: 1.5rem;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .empty-state {
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .selection-count {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>G-ETL Admin</h1>
+        <div id="globalStatus" class="status-badge">Redo</div>
+    </header>
+
+    <main>
+        <div class="panel">
+            <div class="panel-header">
+                <h2>Datasets ({{ enabled_count }} aktiva)</h2>
+                <div class="filter-bar">
+                    <select id="typeFilter">
+                        <option value="">Alla typer</option>
+                        {% for typ in types %}
+                        <option value="{{ typ }}">{{ typ }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="selection-count" id="selectionCount">0 valda</span>
+                </div>
+            </div>
+
+            <div class="dataset-list" id="datasetList">
+                {% for dataset in datasets %}
+                <div class="dataset-item {% if not dataset.enabled %}disabled{% endif %}"
+                     data-id="{{ dataset.id }}"
+                     data-type="{{ dataset.typ }}"
+                     data-enabled="{{ dataset.enabled | lower }}">
+                    <input type="checkbox" {% if not dataset.enabled %}disabled{% endif %}>
+                    <div class="dataset-info">
+                        <div class="dataset-name">{{ dataset.name }}</div>
+                        <div class="dataset-meta">{{ dataset.description }}</div>
+                    </div>
+                    <span class="type-badge">{{ dataset.typ }}</span>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="controls">
+                <label style="display: flex; align-items: center; gap: 0.5rem; margin-right: 1rem;">
+                    <input type="checkbox" id="mockMode" checked>
+                    <span>Mock-läge</span>
+                </label>
+                <button id="btnRunSelected">Kör valda</button>
+                <button id="btnRunType" class="warning">Kör typ</button>
+                <button id="btnRunAll" class="success">Kör alla</button>
+                <button id="btnClear" class="secondary">Rensa val</button>
+            </div>
+        </div>
+
+        <div class="panel log-panel">
+            <div class="panel-header">
+                <h2>Logg</h2>
+                <button id="btnStop" class="secondary" disabled>Stoppa</button>
+            </div>
+
+            <div class="progress-bar" id="progressBar" style="display: none;">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                <div class="progress-text" id="progressText">0/0</div>
+            </div>
+
+            <div class="log-output" id="logOutput">
+                <div class="empty-state">Väntar på jobb...</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const datasetList = document.getElementById('datasetList');
+        const typeFilter = document.getElementById('typeFilter');
+        const selectionCount = document.getElementById('selectionCount');
+        const logOutput = document.getElementById('logOutput');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const globalStatus = document.getElementById('globalStatus');
+        const btnStop = document.getElementById('btnStop');
+
+        let currentJobId = null;
+        let eventSource = null;
+
+        // Dataset selection
+        datasetList.addEventListener('click', (e) => {
+            const item = e.target.closest('.dataset-item');
+            if (!item || item.dataset.enabled === 'false') return;
+
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            checkbox.checked = !checkbox.checked;
+            item.classList.toggle('selected', checkbox.checked);
+            updateSelectionCount();
+        });
+
+        // Type filter
+        typeFilter.addEventListener('change', () => {
+            const selectedType = typeFilter.value;
+            document.querySelectorAll('.dataset-item').forEach(item => {
+                if (!selectedType || item.dataset.type === selectedType) {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+
+        function updateSelectionCount() {
+            const selected = document.querySelectorAll('.dataset-item.selected').length;
+            selectionCount.textContent = `${selected} valda`;
+        }
+
+        function getSelectedIds() {
+            return Array.from(document.querySelectorAll('.dataset-item.selected'))
+                .map(item => item.dataset.id);
+        }
+
+        function clearSelection() {
+            document.querySelectorAll('.dataset-item.selected').forEach(item => {
+                item.classList.remove('selected');
+                item.querySelector('input[type="checkbox"]').checked = false;
+            });
+            updateSelectionCount();
+        }
+
+        function addLog(message) {
+            if (logOutput.querySelector('.empty-state')) {
+                logOutput.innerHTML = '';
+            }
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.textContent = message;
+            logOutput.appendChild(line);
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+
+        function setRunning(running) {
+            globalStatus.textContent = running ? 'Kör...' : 'Redo';
+            globalStatus.classList.toggle('running', running);
+            btnStop.disabled = !running;
+            progressBar.style.display = running ? 'block' : 'none';
+
+            document.querySelectorAll('.controls button:not(.secondary)').forEach(btn => {
+                btn.disabled = running;
+            });
+        }
+
+        function updateProgress(completed, total) {
+            const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+            progressFill.style.width = `${percent}%`;
+            progressText.textContent = `${completed}/${total} (${percent}%)`;
+        }
+
+        async function runPipeline(options) {
+            if (currentJobId) {
+                alert('En körning pågår redan');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(options)
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    console.error('API error:', response.status, text);
+                    alert(`API-fel: ${response.status}`);
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                currentJobId = data.job_id;
+                setRunning(true);
+                const datasetNames = data.datasets || [];
+                addLog(`Startar: ${datasetNames.join(', ')}`);
+                startLogStream();
+                pollJobStatus();
+
+            } catch (err) {
+                console.error(err);
+                alert('Kunde inte starta körning: ' + err.message);
+            }
+        }
+
+        let sseRetryCount = 0;
+        let pollRetryCount = 0;
+        const MAX_RETRIES = 5;
+
+        function startLogStream() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource('/api/logs/stream');
+            eventSource.addEventListener('log', (e) => {
+                sseRetryCount = 0;  // Reset on success
+                addLog(e.data);
+            });
+            eventSource.onerror = () => {
+                sseRetryCount++;
+                console.log(`SSE connection lost (retry ${sseRetryCount}/${MAX_RETRIES})`);
+                if (sseRetryCount < MAX_RETRIES) {
+                    setTimeout(startLogStream, 3000);
+                } else {
+                    addLog('Anslutningen till servern bröts');
+                    setRunning(false);
+                    currentJobId = null;
+                }
+            };
+        }
+
+        async function pollJobStatus() {
+            if (!currentJobId) return;
+
+            try {
+                const response = await fetch(`/api/job/${currentJobId}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const job = await response.json();
+                pollRetryCount = 0;  // Reset on success
+
+                updateProgress(job.completed, job.total);
+
+                if (job.status === 'completed' || job.status === 'failed') {
+                    setRunning(false);
+                    currentJobId = null;
+                    if (eventSource) {
+                        eventSource.close();
+                        eventSource = null;
+                    }
+                    addLog(job.status === 'completed' ? 'Körning klar!' : 'Körning misslyckades');
+                } else {
+                    setTimeout(pollJobStatus, 1000);
+                }
+            } catch (err) {
+                pollRetryCount++;
+                console.error(`Poll error (retry ${pollRetryCount}/${MAX_RETRIES}):`, err);
+                if (pollRetryCount < MAX_RETRIES) {
+                    setTimeout(pollJobStatus, 2000);
+                } else {
+                    addLog('Kunde inte nå servern - körningen kan ha kraschat');
+                    setRunning(false);
+                    currentJobId = null;
+                }
+            }
+        }
+
+        // Mock mode helper
+        function isMockMode() {
+            return document.getElementById('mockMode').checked;
+        }
+
+        // Button handlers
+        document.getElementById('btnRunSelected').addEventListener('click', () => {
+            const ids = getSelectedIds();
+            if (ids.length === 0) {
+                alert('Välj datasets genom att klicka på dem');
+                return;
+            }
+            runPipeline({ dataset_ids: ids, mock: isMockMode() });
+        });
+
+        document.getElementById('btnRunType').addEventListener('click', () => {
+            const typ = typeFilter.value;
+            if (!typ) {
+                alert('Välj en typ i filtret först');
+                return;
+            }
+            runPipeline({ typ: typ, mock: isMockMode() });
+        });
+
+        document.getElementById('btnRunAll').addEventListener('click', () => {
+            if (confirm('Kör alla aktiva datasets?')) {
+                runPipeline({ run_all: true, mock: isMockMode() });
+            }
+        });
+
+        document.getElementById('btnClear').addEventListener('click', clearSelection);
+
+        btnStop.addEventListener('click', async () => {
+            try {
+                await fetch('/api/stop', { method: 'POST' });
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+        // Start log stream on page load
+        startLogStream();
+    </script>
+</body>
+</html>

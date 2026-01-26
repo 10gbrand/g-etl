@@ -1,0 +1,32 @@
+version: '3'
+
+tasks:
+  run:
+    desc: Kör hela pipelinen (extract + transform)
+    cmds:
+      - uv run python -m scripts.pipeline
+
+  extract:
+    desc: Kör bara extract (hämta data)
+    cmds:
+      - uv run python -m scripts.pipeline --extract-only
+
+  transform:
+    desc: Kör bara transform (SQL-filer)
+    cmds:
+      - uv run python -m scripts.pipeline --transform-only
+
+  dataset:
+    desc: Kör specifikt dataset (task pipeline:dataset -- naturreservat)
+    cmds:
+      - uv run python -m scripts.pipeline --dataset {{.CLI_ARGS}}
+
+  type:
+    desc: Kör datasets av viss typ (task pipeline:type -- naturvardsverket_wfs)
+    cmds:
+      - uv run python -m scripts.pipeline --type {{.CLI_ARGS}}
+
+  types:
+    desc: Lista tillgängliga dataset-typer
+    cmds:
+      - uv run python -m scripts.pipeline --list-types

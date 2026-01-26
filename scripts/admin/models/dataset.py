@@ -17,14 +17,16 @@ class Dataset:
     id: str
     name: str
     description: str
-    dbt_model: str
-    source_type: str
+    plugin: str
+    typ: str = ""  # Typ för gruppering (t.ex. naturvardsverket_wfs)
     enabled: bool = True
     status: DatasetStatus = DatasetStatus.PENDING
     progress: int = 0
     total_steps: int = 0
     error_message: str = ""
     elapsed_seconds: float = 0.0
+    # Plugin-specifika config-värden
+    config: dict = field(default_factory=dict)
 
     @property
     def status_icon(self) -> str:
@@ -56,22 +58,32 @@ class DatasetConfig:
         with open(path) as f:
             data = yaml.safe_load(f)
 
-        datasets = [
-            Dataset(
+        datasets = []
+        for d in data.get("datasets", []):
+            # Extrahera känd config, resten går till config-dict
+            dataset = Dataset(
                 id=d["id"],
                 name=d["name"],
                 description=d.get("description", ""),
-                dbt_model=d["dbt_model"],
-                source_type=d.get("source_type", "unknown"),
+                plugin=d.get("plugin", "unknown"),
+                typ=d.get("typ", ""),
                 enabled=d.get("enabled", True),
+                config=d,  # Hela dict:en för plugin-användning
             )
-            for d in data.get("datasets", [])
-        ]
+            datasets.append(dataset)
 
         return cls(datasets=datasets)
 
     def get_enabled(self) -> list[Dataset]:
         return [d for d in self.datasets if d.enabled]
+
+    def get_by_type(self, typ: str) -> list[Dataset]:
+        """Filtrera datasets efter typ."""
+        return [d for d in self.datasets if d.typ == typ and d.enabled]
+
+    def get_types(self) -> list[str]:
+        """Hämta alla unika typer."""
+        return list(set(d.typ for d in self.datasets if d.typ))
 
     def get_by_id(self, dataset_id: str) -> Dataset | None:
         for d in self.datasets:

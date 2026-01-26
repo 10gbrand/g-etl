@@ -3,9 +3,10 @@ version: '3'
 includes:
   docker: ./taskfiles/docker.yml
   db: ./taskfiles/duckdb.yml
-  dbt: ./taskfiles/dbt.yml
+  pipeline: ./taskfiles/pipeline.yml
   py: ./taskfiles/python.yml
   admin: ./taskfiles/admin.yml
+  web: ./taskfiles/web.yml
 
 tasks:
   default:
@@ -17,11 +18,16 @@ tasks:
     desc: Initiera hela projektet (Python, Docker, etc.)
     cmds:
       - task py:install
+      - task db:init
       - echo "Projekt initierat!"
+
+  run:
+    desc: Kör hela pipelinen
+    cmds:
+      - task pipeline:run
 
   clean:
     desc: Rensa genererade filer och cache
     cmds:
       - rm -rf .venv __pycache__ .pytest_cache
-      - rm -rf dbt/target dbt/logs dbt/dbt_packages
       - echo "Städat klart!"

@@ -1,0 +1,24 @@
+"""G-ETL Source Plugins."""
+
+from plugins.base import SourcePlugin
+from plugins.geopackage import GeoPackagePlugin
+from plugins.geoparquet import GeoParquetPlugin
+from plugins.lantmateriet import LantmaterietPlugin
+from plugins.wfs import WfsPlugin
+from plugins.zip_geopackage import ZipGeoPackagePlugin
+
+PLUGINS: dict[str, type[SourcePlugin]] = {
+    "wfs": WfsPlugin,
+    "lantmateriet": LantmaterietPlugin,
+    "geopackage": GeoPackagePlugin,
+    "geoparquet": GeoParquetPlugin,
+    "zip_geopackage": ZipGeoPackagePlugin,
+}
+
+
+def get_plugin(plugin_name: str) -> SourcePlugin:
+    """Hämta plugin-instans baserat på namn."""
+    plugin_class = PLUGINS.get(plugin_name)
+    if not plugin_class:
+        raise ValueError(f"Okänd plugin: {plugin_name}. Tillgängliga: {list(PLUGINS.keys())}")
+    return plugin_class()
