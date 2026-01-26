@@ -29,13 +29,13 @@ class GeoPackagePlugin(SourcePlugin):
             layer: Specifikt lager att läsa (optional, default: första lagret)
         """
         file_path = config.get("path")
-        table_name = config.get("name")
+        table_name = config.get("id")  # Använd alltid id som tabellnamn
         layer = config.get("layer")
 
         if not all([file_path, table_name]):
             return ExtractResult(
                 success=False,
-                message="Saknar path eller name i config",
+                message="Saknar path eller id i config",
             )
 
         path = Path(file_path)

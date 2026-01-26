@@ -28,12 +28,12 @@ class GeoParquetPlugin(SourcePlugin):
             name: Tabellnamn i DuckDB
         """
         file_path = config.get("path")
-        table_name = config.get("name")
+        table_name = config.get("id")  # Använd alltid id som tabellnamn
 
         if not all([file_path, table_name]):
             return ExtractResult(
                 success=False,
-                message="Saknar path eller name i config",
+                message="Saknar path eller id i config",
             )
 
         # Kolla om det är en URL eller lokal fil

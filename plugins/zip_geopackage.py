@@ -33,7 +33,7 @@ class ZipGeoPackagePlugin(SourcePlugin):
             gpkg_filename: Filnamn på .gpkg i zip:en (optional, hittas automatiskt)
         """
         url = config.get("url")
-        table_name = config.get("name", config.get("id"))
+        table_name = config.get("id")  # Använd alltid id som tabellnamn
         layer = config.get("layer")
         gpkg_filename = config.get("gpkg_filename")
 

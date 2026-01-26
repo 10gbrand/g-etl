@@ -6,7 +6,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.NATURRESERVAT
-    enabled: true
+    enabled: false
 
   - id: nyckelbiotoper
     name: Nyckelbiotoper
@@ -15,7 +15,7 @@ datasets:
     plugin: wfs
     url: https://geodpags.skogsstyrelsen.se/geodataport/services/Nyckelbiotoper
     layer: Nyckelbiotop
-    enabled: true
+    enabled: false
 
   - id: n2000
     name: Natura 2000
@@ -24,7 +24,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.NATURA2000_SCI
-    enabled: true
+    enabled: false
 
   - id: riksintressen_naturvard
     name: Riksintressen naturvård
@@ -33,7 +33,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.RIKSINTRESSE_NATURVARD
-    enabled: true
+    enabled: false
 
   - id: riksintressen_friluftsliv
     name: Riksintressen friluftsliv
@@ -42,7 +42,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.RIKSINTRESSE_FRILUFTSLIV
-    enabled: true
+    enabled: false
 
   - id: strandskydd
     name: Strandskydd
@@ -60,7 +60,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.BIOTOPSKYDD
-    enabled: true
+    enabled: false
 
   - id: naturminnen
     name: Naturminnen
@@ -69,7 +69,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.NATURMINNE
-    enabled: true
+    enabled: false
 
   - id: nationalparker
     name: Nationalparker
@@ -78,7 +78,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.NATIONALPARK
-    enabled: true
+    enabled: false
 
   - id: vattenskyddsomraden
     name: Vattenskyddsområden
@@ -87,7 +87,7 @@ datasets:
     plugin: wfs
     url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
     layer: NVR.VATTENSKYDDSOMRADE
-    enabled: true
+    enabled: false
 
   - id: avverkningsanmalningar
     name: Avverkningsanmalningar
@@ -103,4 +103,12 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
+    enabled: true
+
+  - id: sksdodagranar
+    name: sksDodaGranar
+    description: sksDodaGranarAI_EjValideradPunkt från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
     enabled: true

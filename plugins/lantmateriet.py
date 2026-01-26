@@ -45,13 +45,13 @@ class LantmaterietPlugin(SourcePlugin):
             params: Extra query-parametrar (optional)
         """
         endpoint = config.get("endpoint")
-        table_name = config.get("name")
+        table_name = config.get("id")  # Använd alltid id som tabellnamn
         params = config.get("params", {})
 
         if not all([endpoint, table_name]):
             return ExtractResult(
                 success=False,
-                message="Saknar endpoint eller name i config",
+                message="Saknar endpoint eller id i config",
             )
 
         self._log(f"Hämtar från Lantmäteriet: {endpoint}...", on_log)

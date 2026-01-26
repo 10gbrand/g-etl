@@ -31,14 +31,14 @@ class WfsPlugin(SourcePlugin):
         """
         url = config.get("url")
         layer = config.get("layer")
-        table_name = config.get("name")
+        table_name = config.get("id")  # Använd alltid id som tabellnamn
         srs = config.get("srs", "EPSG:3006")
         max_features = config.get("max_features")
 
         if not all([url, layer, table_name]):
             return ExtractResult(
                 success=False,
-                message="Saknar url, layer eller name i config",
+                message="Saknar url, layer eller id i config",
             )
 
         self._log(f"Hämtar {layer} från {url}...", on_log)

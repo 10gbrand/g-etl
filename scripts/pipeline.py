@@ -97,22 +97,21 @@ class Pipeline:
         conn = self._get_connection()
         return plugin.extract(dataset, conn, on_log)
 
-    def run_sql_files(
+    def run_sql_folder(
         self,
-        folder: str,
+        folder: Path,
         on_log: Callable[[str], None] | None = None,
     ) -> int:
-        """Kör alla SQL-filer i en mapp i alfabetisk ordning."""
-        sql_folder = self.sql_path / folder
-        if not sql_folder.exists():
+        """Kör alla SQL-filer i en specifik mapp i alfabetisk ordning."""
+        if not folder.exists():
             return 0
 
         conn = self._get_connection()
         files_run = 0
 
-        for sql_file in sorted(sql_folder.glob("*.sql")):
+        for sql_file in sorted(folder.glob("*.sql")):
             if on_log:
-                on_log(f"Kör {sql_file.name}...")
+                on_log(f"  Kör {sql_file.name}...")
 
             try:
                 sql = sql_file.read_text()
@@ -120,7 +119,74 @@ class Pipeline:
                 files_run += 1
             except Exception as e:
                 if on_log:
-                    on_log(f"Fel i {sql_file.name}: {e}")
+                    on_log(f"  Fel i {sql_file.name}: {e}")
+
+        return files_run
+
+    def run_sql_for_dataset(
+        self,
+        dataset_id: str,
+        stage: str,
+        on_log: Callable[[str], None] | None = None,
+    ) -> int:
+        """Kör SQL-filer för ett specifikt dataset.
+
+        Körordning:
+        1. _common/ mappen (om den finns)
+        2. <dataset_id>/ mappen (om den finns)
+
+        Args:
+            dataset_id: Dataset-ID som matchar mappnamn
+            stage: "staging" eller "mart"
+            on_log: Callback för loggmeddelanden
+        """
+        stage_folder = self.sql_path / stage
+        files_run = 0
+
+        # Kör _common först
+        common_folder = stage_folder / "_common"
+        if common_folder.exists():
+            if on_log:
+                on_log(f"Kör {stage}/_common...")
+            files_run += self.run_sql_folder(common_folder, on_log)
+
+        # Kör dataset-specifik mapp
+        dataset_folder = stage_folder / dataset_id
+        if dataset_folder.exists():
+            if on_log:
+                on_log(f"Kör {stage}/{dataset_id}...")
+            files_run += self.run_sql_folder(dataset_folder, on_log)
+
+        return files_run
+
+    def run_sql_files(
+        self,
+        folder: str,
+        on_log: Callable[[str], None] | None = None,
+    ) -> int:
+        """Kör alla SQL-filer i en mapp (legacy-metod för bakåtkompatibilitet).
+
+        Kör _common först, sedan alla dataset-mappar i alfabetisk ordning.
+        """
+        stage_folder = self.sql_path / folder
+        if not stage_folder.exists():
+            return 0
+
+        files_run = 0
+
+        # Kör _common först
+        common_folder = stage_folder / "_common"
+        if common_folder.exists():
+            if on_log:
+                on_log(f"Kör {folder}/_common...")
+            files_run += self.run_sql_folder(common_folder, on_log)
+
+        # Kör alla dataset-mappar
+        for subfolder in sorted(stage_folder.iterdir()):
+            if subfolder.is_dir() and not subfolder.name.startswith("_"):
+                if on_log:
+                    on_log(f"Kör {folder}/{subfolder.name}...")
+                files_run += self.run_sql_folder(subfolder, on_log)
 
         return files_run
 
@@ -146,23 +212,32 @@ class Pipeline:
         datasets_failed = 0
         sql_files_run = 0
 
-        # Extract
-        if not transform_only:
-            for dataset in config:
-                # Filtrera på typ om specificerat
-                if typ and dataset.get("typ") != typ:
-                    continue
+        # Samla dataset som ska köras
+        datasets_to_run = []
+        for dataset in config:
+            # Filtrera på typ om specificerat
+            if typ and dataset.get("typ") != typ:
+                continue
 
-                # Filtrera på ID om specificerat
-                if datasets and dataset.get("id") not in datasets:
-                    continue
+            # Filtrera på ID om specificerat
+            if datasets and dataset.get("id") not in datasets:
+                continue
 
-                # Hoppa över disabled datasets
-                if not dataset.get("enabled", True):
-                    continue
+            # Hoppa över disabled datasets
+            if not dataset.get("enabled", True):
+                continue
 
+            datasets_to_run.append(dataset)
+
+        # Kör extract + transform per dataset
+        for dataset in datasets_to_run:
+            dataset_id = dataset.get("id")
+            dataset_name = dataset.get("name", dataset_id)
+
+            # Extract
+            if not transform_only:
                 if on_log:
-                    on_log(f"Extraherar {dataset.get('name', dataset.get('id'))}...")
+                    on_log(f"Extraherar {dataset_name}...")
 
                 result = self.extract_dataset(dataset, on_log)
 
@@ -172,9 +247,15 @@ class Pipeline:
                     datasets_failed += 1
                     if on_log:
                         on_log(f"Misslyckades: {result.message}")
+                    continue  # Hoppa över transform om extract misslyckades
 
-        # Transform
-        if not extract_only:
+            # Transform för detta dataset
+            if not extract_only:
+                sql_files_run += self.run_sql_for_dataset(dataset_id, "staging", on_log)
+                sql_files_run += self.run_sql_for_dataset(dataset_id, "mart", on_log)
+
+        # Om bara transform körs utan specifika datasets, kör alla SQL-filer
+        if transform_only and not datasets:
             if on_log:
                 on_log("Kör staging-transformationer...")
             sql_files_run += self.run_sql_files("staging", on_log)

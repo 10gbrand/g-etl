@@ -19,6 +19,13 @@ COPY plugins/ plugins/
 COPY config/ config/
 COPY sql/ sql/
 
+# Download Leaflet for static serving (avoid CDN blocking)
+RUN mkdir -p scripts/web/static && \
+    apt-get update && apt-get install -y --no-install-recommends curl && \
+    curl -sL https://unpkg.com/leaflet@1.9.4/dist/leaflet.css -o scripts/web/static/leaflet.css && \
+    curl -sL https://unpkg.com/leaflet@1.9.4/dist/leaflet.js -o scripts/web/static/leaflet.js && \
+    apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 RUN uv sync --no-dev
 
