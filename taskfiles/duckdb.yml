@@ -2,23 +2,36 @@ version: '3'
 
 vars:
   DB_FILE: data/warehouse.duckdb
+  INIT_FILE: .duckdbrc
 
 tasks:
   cli:
-    desc: Öppna DuckDB CLI
+    desc: Öppna DuckDB CLI (med extensions)
+    cmds:
+      - duckdb -init {{.INIT_FILE}} {{.DB_FILE}}
+
+  cli-raw:
+    desc: Öppna DuckDB CLI (utan init)
     cmds:
       - duckdb {{.DB_FILE}}
 
   query:
-    desc: Kör en SQL-fråga (task db:query -- "SELECT 1")
+    desc: Kör en SQL-fråga (task db:query -- SELECT 1)
     cmds:
-      - duckdb {{.DB_FILE}} "{{.CLI_ARGS}}"
+      - duckdb -init {{.INIT_FILE}} {{.DB_FILE}} -c "{{.CLI_ARGS}}"
 
   init:
-    desc: Skapa databas och kör init-migration
+    desc: Initiera databas med extensions, scheman och makron
     cmds:
-      - duckdb {{.DB_FILE}} < migrations/20251223184625_init.sql
-      - echo "Databas initierad med extensions och schemas"
+      - |
+        echo "Kör alla init-filer i en session..."
+        cat sql/_init/*.sql | duckdb {{.DB_FILE}}
+      - echo "Databas initierad"
+
+  run-sql:
+    desc: Kör en SQL-fil (task db:run-sql -- sql/staging/dataset/01_clean.sql)
+    cmds:
+      - duckdb -init {{.INIT_FILE}} {{.DB_FILE}} < "{{.CLI_ARGS}}"
 
   migrate:
     desc: Kör alla migrationer i ordning

@@ -352,21 +352,17 @@ async def stream_logs(request: Request):
 
 
 def get_db_connection() -> duckdb.DuckDBPyConnection:
-    """Get a DuckDB connection with spatial extension loaded."""
+    """Get a DuckDB connection with extensions and macros loaded."""
     import os
+
+    from scripts.db import get_connection
 
     db_path = os.environ.get("DB_PATH", DB_PATH)
 
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Databasen finns inte: {db_path}")
 
-    conn = duckdb.connect(db_path, read_only=True)
-    try:
-        conn.execute("INSTALL spatial")
-        conn.execute("LOAD spatial")
-    except Exception as e:
-        print(f"[Explorer] Warning: spatial extension: {e}")
-    return conn
+    return get_connection(db_path=db_path, read_only=True)
 
 
 @app.get("/explorer", response_class=HTMLResponse)

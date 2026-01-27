@@ -1,0 +1,7 @@
+-- DuckDB startup-fil
+-- Laddar extensions automatiskt vid varje session
+
+LOAD spatial;
+LOAD parquet;
+LOAD httpfs;
+LOAD json;

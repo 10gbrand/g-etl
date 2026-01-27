@@ -59,18 +59,22 @@ Admin TUI (Textual)┘                        ↓
 **Nyckelkomponenter:**
 
 - `plugins/` - Datakälla-plugins (wfs, lantmateriet, geopackage, geoparquet, zip_geopackage)
+- `sql/_init/` - Databas-initiering (extensions, scheman, makron)
 - `sql/staging/` - SQL för rensning och standardisering
 - `sql/mart/` - SQL för färdiga dataset
 - `scripts/pipeline.py` - Pipeline-runner (CLI)
+- `scripts/db.py` - Gemensamma databasverktyg
 - `scripts/admin/app.py` - Textual TUI-applikation
 - `scripts/web/app.py` - FastAPI webbgränssnitt
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
 
-**DuckDB-extensions som laddas:**
-- `spatial` - Geometri och geodata
-- `parquet` - GeoParquet-stöd
-- `httpfs` - WFS och fjärrfiler
-- `json` - API-responshantering
+**DuckDB-initiering (sql/_init/):**
+
+Körs automatiskt vid varje databasanslutning i alfabetisk ordning:
+
+- `01_extensions.sql` - Installerar och laddar extensions (spatial, parquet, httpfs, json)
+- `02_schemas.sql` - Skapar scheman (raw, staging, mart)
+- `03_macros.sql` - Definierar återanvändbara makron (validate_and_fix_geometry, etc.)
 
 ## Plugins
 

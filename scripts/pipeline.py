@@ -52,22 +52,26 @@ class Pipeline:
         return self._conn
 
     def _init_database(self):
-        """Initiera databas med extensions och scheman."""
+        """Initiera databas med extensions, scheman och makron från sql/_init/."""
         conn = self._conn
         if conn is None:
             return
 
-        # Ladda extensions
-        for ext in ["spatial", "parquet", "httpfs", "json"]:
-            try:
-                conn.execute(f"INSTALL {ext}")
-                conn.execute(f"LOAD {ext}")
-            except Exception:
-                pass  # Extension kanske redan laddad
-
-        # Skapa scheman
-        for schema in ["raw", "staging", "mart"]:
-            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        init_folder = self.sql_path / "_init"
+        if init_folder.exists():
+            # Kör alla SQL-filer i _init i alfabetisk ordning
+            for sql_file in sorted(init_folder.glob("*.sql")):
+                try:
+                    sql = sql_file.read_text()
+                    # Kör varje statement separat (separerade med semikolon)
+                    # DuckDB hanterar SQL-kommentarer själv
+                    for statement in sql.split(";"):
+                        statement = statement.strip()
+                        if statement:
+                            conn.execute(statement)
+                except Exception as e:
+                    # Logga men fortsätt - vissa kommandon kan redan vara körda
+                    print(f"[Init] {sql_file.name}: {e}")
 
     def load_config(self) -> list[dict]:
         """Ladda dataset-konfiguration från YAML."""
