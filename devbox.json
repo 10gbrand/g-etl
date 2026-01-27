@@ -5,7 +5,7 @@
     "tree@latest",
     "claude-code@latest",
     "uv@latest",
-    "duckdb@latest"
+    "harlequin@latest"
   ],
   "shell": {
     "init_hook": [

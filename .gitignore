@@ -213,3 +213,7 @@ data/**/*
 # DuckDB database files
 *.duckdb
 *.duckdb.wal
+
+# Pipeline logs
+logs/*
+!logs/.gitkeep

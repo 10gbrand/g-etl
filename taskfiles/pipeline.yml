@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 tasks:
   run:
@@ -22,7 +22,7 @@ tasks:
       - uv run python -m scripts.pipeline --dataset {{.CLI_ARGS}}
 
   type:
-    desc: Kör datasets av viss typ (task pipeline:type -- naturvardsverket_wfs)
+    desc: Kör datasets av viss typ (task pipeline:type -- skogsstyrelsen_gpkg)
     cmds:
       - uv run python -m scripts.pipeline --type {{.CLI_ARGS}}
 

@@ -5,7 +5,7 @@ description = "DuckDB ETL-stack for geodata"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "duckdb>=1.0.0",
+    "duckdb>=1.3.0",
     "geopandas>=1.0.0",
     "pyarrow>=17.0.0",
     "requests>=2.32.0",
@@ -20,10 +20,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "ruff>=0.6.0",
-    "pytest>=8.0.0",
-]
+dev = ["ruff>=0.6.0", "pytest>=8.0.0"]
+
+[dependency-groups]
+dev = ["ruff>=0.6.0", "pytest>=8.0.0"]
 
 [tool.ruff]
 line-length = 100
@@ -33,7 +33,4 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.uv]
-dev-dependencies = [
-    "ruff>=0.6.0",
-    "pytest>=8.0.0",
-]
+# tomt eller andra inställningar, men ingen dev-dependencies här längre

@@ -6,7 +6,7 @@ SELECT
    *,
 
     -- Geometri - använd common-makron
-    validate_and_fix_geometry(geom) AS geometry,
+    validate_and_fix_geometry(geom) AS geom,
 
     -- Metadata
     CURRENT_TIMESTAMP AS _loaded_at

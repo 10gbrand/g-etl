@@ -1,3 +1,5 @@
+name: g-etl
+
 services:
   web:
     build:

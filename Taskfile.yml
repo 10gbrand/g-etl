@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 includes:
   docker: ./taskfiles/docker.yml
@@ -31,3 +31,8 @@ tasks:
     cmds:
       - rm -rf .venv __pycache__ .pytest_cache
       - echo "Städat klart!"
+
+  hq:
+    desc:
+    cmds:
+      - harlequin data/warehouse.duckdb

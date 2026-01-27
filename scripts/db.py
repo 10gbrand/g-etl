@@ -52,7 +52,7 @@ def get_connection(
         db_path: Sökväg till databas (default från miljövariabel eller DEFAULT_DB_PATH)
         sql_path: Sökväg till sql-mappen för initiering
         read_only: Om True, öppna i read-only läge
-        init: Om True, kör initierings-SQL
+        init: Om True, kör initierings-SQL (ignoreras om read_only=True)
 
     Returns:
         DuckDB-anslutning
@@ -62,7 +62,8 @@ def get_connection(
 
     conn = duckdb.connect(db_path, read_only=read_only)
 
-    if init:
+    # Hoppa över init i read-only läge (kan inte skapa scheman/makron)
+    if init and not read_only:
         init_database(conn, sql_path)
 
     return conn
