@@ -7,9 +7,11 @@ import yaml
 
 class DatasetStatus(Enum):
     PENDING = "pending"
+    QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 @dataclass
@@ -32,9 +34,11 @@ class Dataset:
     def status_icon(self) -> str:
         icons = {
             DatasetStatus.PENDING: "○",
+            DatasetStatus.QUEUED: "◔",
             DatasetStatus.RUNNING: "⟳",
             DatasetStatus.COMPLETED: "✓",
             DatasetStatus.FAILED: "✗",
+            DatasetStatus.SKIPPED: "⊘",
         }
         return icons.get(self.status, "?")
 

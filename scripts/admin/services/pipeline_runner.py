@@ -8,16 +8,20 @@ from pathlib import Path
 import duckdb
 
 from plugins import get_plugin
-from plugins.base import ExtractResult
 
 
 @dataclass
 class PipelineEvent:
-    event_type: str
+    """Event för pipeline-statusuppdateringar."""
+
+    event_type: str  # "started", "progress", "completed", "failed"
     message: str
     dataset: str | None = None
     status: str | None = None
     rows_count: int | None = None
+    progress: float | None = None  # 0.0 - 1.0
+    current_step: int | None = None
+    total_steps: int | None = None
 
 
 class PipelineRunner:
@@ -170,6 +174,7 @@ class MockPipelineRunner(PipelineRunner):
     ) -> bool:
         self._running = True
         dataset_name = dataset_config.get("name", dataset_config.get("id"))
+        total_steps = 5
 
         if on_log:
             on_log(f"[MOCK] Startar {dataset_name}...")
@@ -179,13 +184,43 @@ class MockPipelineRunner(PipelineRunner):
                 event_type="dataset_started",
                 message=f"Startar {dataset_name}",
                 dataset=dataset_name,
+                progress=0.0,
+                current_step=0,
+                total_steps=total_steps,
             ))
 
-        # Simulera arbete
-        await asyncio.sleep(2)
+        # Simulera arbete med progress-uppdateringar
+        steps = [
+            "Ansluter till källa...",
+            "Hämtar metadata...",
+            "Laddar data...",
+            "Validerar geometri...",
+            "Sparar till databas...",
+        ]
+
+        for i, step_msg in enumerate(steps):
+            if not self._running:
+                return False
+
+            if on_log:
+                on_log(f"[MOCK] {step_msg}")
+
+            if on_event:
+                on_event(PipelineEvent(
+                    event_type="progress",
+                    message=step_msg,
+                    dataset=dataset_name,
+                    progress=(i + 1) / total_steps,
+                    current_step=i + 1,
+                    total_steps=total_steps,
+                ))
+
+            await asyncio.sleep(0.4)  # 0.4s per steg = 2s totalt
+
+        rows = 1000 + hash(dataset_name) % 9000  # Varierande antal rader
 
         if on_log:
-            on_log(f"[MOCK] Klar: {dataset_name}")
+            on_log(f"[MOCK] Klar: {dataset_name} ({rows} rader)")
 
         if on_event:
             on_event(PipelineEvent(
@@ -193,7 +228,8 @@ class MockPipelineRunner(PipelineRunner):
                 message=f"Klar: {dataset_name}",
                 dataset=dataset_name,
                 status="success",
-                rows_count=1000,
+                rows_count=rows,
+                progress=1.0,
             ))
 
         self._running = False
@@ -203,9 +239,17 @@ class MockPipelineRunner(PipelineRunner):
         self,
         on_log: Callable[[str], None] | None = None,
     ) -> bool:
-        if on_log:
-            on_log("[MOCK] Kör transformationer...")
-        await asyncio.sleep(1)
+        transform_steps = [
+            "staging/_common/01_validate.sql",
+            "staging/_common/02_clean.sql",
+            "mart/_common/01_aggregate.sql",
+        ]
+
+        for step in transform_steps:
+            if on_log:
+                on_log(f"[MOCK] Kör {step}...")
+            await asyncio.sleep(0.3)
+
         if on_log:
             on_log("[MOCK] Transformationer klara")
         return True
