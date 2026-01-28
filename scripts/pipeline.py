@@ -13,6 +13,7 @@ import duckdb
 import yaml
 from dotenv import load_dotenv
 
+from config.settings import settings
 from plugins import get_plugin
 from plugins.base import ExtractResult
 
@@ -23,15 +24,14 @@ load_dotenv()
 # Loggning
 # =============================================================================
 
-DEFAULT_LOGS_DIR = Path("logs")
 MAX_LOG_FILES = 20  # Behåll de senaste N loggfilerna
 
 
 class FileLogger:
     """Hanterar loggning till fil med automatisk rotation."""
 
-    def __init__(self, logs_dir: Path = DEFAULT_LOGS_DIR, prefix: str = "pipeline"):
-        self.logs_dir = logs_dir
+    def __init__(self, logs_dir: Path | None = None, prefix: str = "pipeline"):
+        self.logs_dir = logs_dir or settings.LOGS_DIR
         self.prefix = prefix
         self.log_file: Path | None = None
         self._file_handle = None

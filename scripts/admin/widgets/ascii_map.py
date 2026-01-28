@@ -508,10 +508,11 @@ class BrailleMapWidget(Static):
 
     DEFAULT_CSS = """
     BrailleMapWidget {
-        height: auto;
-        min-height: 20;
+        height: 1fr;
+        min-height: 30;
         padding: 1;
         border: round $primary;
+        overflow-y: auto;
     }
     """
 

@@ -18,13 +18,22 @@ from textual.widgets import (
 )
 
 from scripts.admin.models.dataset import Dataset, DatasetConfig, DatasetStatus
-from scripts.admin.services.pipeline_runner import MockPipelineRunner, PipelineRunner
-from scripts.pipeline import FileLogger
+from scripts.admin.services.db_session import (
+    cleanup_all_databases,
+    cleanup_all_logs,
+    cleanup_all_parquet,
+    get_data_stats,
+)
+from scripts.admin.services.pipeline_runner import (
+    MockPipelineRunner,
+    PipelineRunner,
+)
 from scripts.admin.widgets.multi_progress import (
     MultiProgressWidget,
     TaskProgress,
     TaskStatus,
 )
+from scripts.pipeline import FileLogger
 
 
 class DatasetRow(Static):
@@ -132,6 +141,7 @@ class PipelineScreen(Screen):
         Binding("t", "run_type", "Kör typ"),
         Binding("s", "stop", "Stoppa"),
         Binding("c", "clear_selection", "Rensa val"),
+        Binding("d", "clear_data", "Rensa data"),
         Binding("e", "app.push_screen('explorer')", "Explorer"),
         Binding("m", "toggle_mock", "Mock-läge"),
         Binding("q", "quit", "Avsluta"),
@@ -344,7 +354,7 @@ class PipelineScreen(Screen):
 
     @work(exclusive=True)
     async def run_datasets(self, datasets: list[Dataset]) -> None:
-        """Kör valda datasets med Docker-stil progress."""
+        """Kör valda datasets med parallell extraktion och Docker-stil progress."""
         if not datasets:
             self.log_message("Inga datasets att köra")
             return
@@ -376,75 +386,111 @@ class PipelineScreen(Screen):
         else:
             self.runner = PipelineRunner(db_path=self.db_path)
 
-        progress.set_phase("Extract")
-        self.log_message(f"Startar {len(datasets)} dataset(s)...")
+        # === FAS 1: Parallell extraktion till GeoParquet ===
+        progress.set_phase("Extract (parallell)")
+        self.log_message(f"Startar parallell extraktion av {len(datasets)} dataset(s)...")
 
-        # Kör datasets sekventiellt
-        for i, dataset in enumerate(datasets):
-            if not self._running:
-                self.log_message("Avbrutet av användare")
-                # Markera återstående som skipped
-                for remaining in datasets[i:]:
-                    progress.update_task(remaining.id, status=TaskStatus.SKIPPED)
-                break
+        # Callback för progress-events under extraktion
+        def on_extract_event(event) -> None:
+            ds_id = event.dataset
+            if event.event_type == "dataset_started":
+                self.update_dataset_status(ds_id, DatasetStatus.RUNNING)
+                progress.update_task(
+                    ds_id,
+                    status=TaskStatus.RUNNING,
+                    progress=0.0,
+                    message="Startar...",
+                )
+            elif event.event_type == "progress":
+                progress.update_task(
+                    ds_id,
+                    progress=event.progress or 0.0,
+                    message=event.message,
+                )
+            elif event.event_type == "dataset_completed":
+                self.update_dataset_status(ds_id, DatasetStatus.COMPLETED)
+                progress.update_task(
+                    ds_id,
+                    status=TaskStatus.COMPLETED,
+                    progress=1.0,
+                    rows_count=event.rows_count,
+                )
+                self.log_message(f"Klar: {ds_id} ({event.rows_count} rader)")
+            elif event.event_type == "dataset_failed":
+                self.update_dataset_status(ds_id, DatasetStatus.FAILED)
+                progress.update_task(
+                    ds_id,
+                    status=TaskStatus.FAILED,
+                    error=event.message,
+                )
+                self.log_message(f"Fel: {ds_id} - {event.message}")
 
-            # Uppdatera status
-            self.update_dataset_status(dataset.id, DatasetStatus.RUNNING)
-            progress.update_task(
-                dataset.id,
-                status=TaskStatus.RUNNING,
-                progress=0.0,
-                message="Startar...",
+        # Kör parallell extraktion
+        extract_result = await self.runner.run_parallel_extract(
+            dataset_configs=[ds.config for ds in datasets],
+            output_dir="data/raw",
+            max_concurrent=4,
+            on_event=on_extract_event,
+            on_log=lambda msg: self.log_message(msg),
+        )
+
+        if not self._running:
+            self.log_message("Avbrutet av användare")
+            self.set_running_state(False)
+            return
+
+        # Rapportera resultat
+        self.log_message(
+            f"Extraktion klar: {len(extract_result.parquet_files)} lyckade, "
+            f"{len(extract_result.failed)} misslyckade"
+        )
+
+        # === FAS 2: Ladda parquet till DuckDB ===
+        extracted_ids = []
+        if extract_result.parquet_files:
+            progress.set_phase("Load")
+            self.log_message("Laddar parquet-filer till databas...")
+
+            await self.runner.load_parquet_to_db(
+                parquet_files=extract_result.parquet_files,
+                on_log=lambda msg: self.log_message(msg),
             )
 
-            # Callback för logg-meddelanden
-            def on_log(msg: str, ds_id: str = dataset.id) -> None:
-                self.log_message(msg)
+            # Spara ID:n för lyckade extraktioner
+            extracted_ids = [ds_id for ds_id, _ in extract_result.parquet_files]
 
-            # Callback för progress-events
-            def on_event(event, ds_id: str = dataset.id) -> None:
-                if event.event_type == "progress":
-                    progress.update_task(
-                        ds_id,
-                        progress=event.progress or 0.0,
-                        message=event.message,
-                    )
-                elif event.event_type == "dataset_completed":
-                    progress.update_task(
-                        ds_id,
-                        status=TaskStatus.COMPLETED,
-                        progress=1.0,
-                        rows_count=event.rows_count,
-                    )
-                elif event.event_type == "dataset_failed":
-                    progress.update_task(
-                        ds_id,
-                        status=TaskStatus.FAILED,
-                        error=event.message,
-                    )
-
-            self.log_message(f"Kör {dataset.name}...")
-
-            success = await self.runner.run_dataset(
-                dataset_config=dataset.config,
-                on_event=on_event,
-                on_log=on_log,
-            )
-
-            if success:
-                self.update_dataset_status(dataset.id, DatasetStatus.COMPLETED)
-                self.log_message(f"Klar: {dataset.name}")
-            else:
-                self.update_dataset_status(dataset.id, DatasetStatus.FAILED)
-                self.log_message(f"Fel: {dataset.name}")
-
-        # Kör transformationer
-        if self._running:
-            progress.set_phase("Transform")
-            self.log_message("Kör SQL-transformationer...")
-            progress.set_status("Kör SQL-transformationer...")
+        # === FAS 3: Staging SQL-transformationer ===
+        if self._running and extracted_ids:
+            progress.set_phase("Staging SQL")
+            self.log_message("Kör staging SQL (validering, MD5, centroids)...")
+            progress.set_status("Skapar staging-tabeller...")
 
             await self.runner.run_transforms(
+                dataset_ids=extracted_ids,
+                folders=["staging"],
+                on_log=lambda msg: self.log_message(msg),
+            )
+
+        # === FAS 4: H3-indexering (Python) ===
+        if self._running and extracted_ids:
+            progress.set_phase("H3 Index")
+            self.log_message("Beräknar H3-index...")
+            progress.set_status("Lägger till H3-celler i staging-tabeller...")
+
+            await self.runner.run_staging(
+                dataset_ids=extracted_ids,
+                on_log=lambda msg: self.log_message(msg),
+            )
+
+        # === FAS 5: Mart SQL-transformationer ===
+        if self._running:
+            progress.set_phase("Mart SQL")
+            self.log_message("Kör mart SQL-transformationer...")
+            progress.set_status("Skapar färdiga dataset...")
+
+            await self.runner.run_transforms(
+                dataset_ids=extracted_ids,
+                folders=["mart"],
                 on_log=lambda msg: self.log_message(msg)
             )
 
@@ -511,6 +557,38 @@ class PipelineScreen(Screen):
     def action_quit(self) -> None:
         """Avsluta applikationen."""
         self.app.exit()
+
+    async def action_clear_data(self) -> None:
+        """Rensa alla datafiler (databaser, parquet och loggar)."""
+        # Visa aktuell statistik
+        stats = get_data_stats()
+        self.log_message(
+            f"Nuvarande data: {stats['db_count']} databaser ({stats['db_size_mb']} MB), "
+            f"{stats['parquet_count']} parquet ({stats['parquet_size_mb']} MB), "
+            f"{stats['log_count']} loggar ({stats['log_size_mb']} MB)"
+        )
+
+        # Rensa databaser
+        db_count, db_size = cleanup_all_databases()
+        if db_count > 0:
+            self.log_message(f"Tog bort {db_count} databasfiler ({db_size} MB)")
+
+        # Rensa parquet-filer
+        pq_count, pq_size = cleanup_all_parquet()
+        if pq_count > 0:
+            self.log_message(f"Tog bort {pq_count} parquet-filer ({pq_size} MB)")
+
+        # Rensa loggfiler
+        log_count, log_size = cleanup_all_logs()
+        if log_count > 0:
+            self.log_message(f"Tog bort {log_count} loggfiler ({log_size} MB)")
+
+        total_count = db_count + pq_count + log_count
+        if total_count == 0:
+            self.log_message("Inga filer att rensa")
+        else:
+            total_size = db_size + pq_size + log_size
+            self.log_message(f"Totalt rensat: {total_count} filer ({total_size} MB)")
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Hantera knapptryckningar."""

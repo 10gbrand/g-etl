@@ -21,7 +21,7 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
-    enabled: true
+    enabled: false
 
   - id: nationalparker
     name: Nationalparker
@@ -37,4 +37,210 @@ datasets:
     typ: naturvardsverket_gpkg
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NR.zip
+    enabled: true
+
+  - id: natura2000_sci
+    name: Natura2000_SCI
+    description: Natura2000 från naturvardsverket, kod 103 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+    enabled: true
+
+  - id: natura2000_spa
+    name: Natura2000_SPA
+    description: Natura2000 från naturvardsverket, kod 103 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
+    enabled: true
+
+  - id: naturvardsavtal
+    name: Naturvardsavtal
+    description: Naturvardsavtal från naturvardsverket, kod 104 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVA.zip
+    enabled: true
+
+  - id: naturvardsavtal_sks
+    name: Naturvardsavtal_SKS
+    description: Naturvardsavtal från skogsstyrelsen, kod 104 i GISS
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNaturvardsavtal_gpkg.zip
+    enabled: true
+
+  - id: biotopskydd_sks
+    name: Biotopskydd_SKS
+    description: Biotopskydd från skogsstyrelsen, kod 105 i GISS
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
+    enabled: true
+
+  - id: biotopskydd
+    name: Biotopskydd
+    description: Biotopskydd från naturvardsverket, kod 105 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/OBO.zip
+    enabled: true
+
+  - id: vso
+    name: VSO
+    description: VSO från naturvardsverket, kod 106 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/VSO.zip
+    enabled: true
+
+  - id: Vardefullavatten
+    name: Vardefullavatten
+    description: Vardefullavatten, kod 111 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows
+    enabled: false
+
+  - id: nyckelbiotoper
+    name: Nyckelbiotoper
+    description: Nyckelbiotoper från skogsstyrelsen, kod 112 i GISS
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNyckelbiotoper_gpkg.zip
+    enabled: true
+
+  - id: stornyckelbiotoper
+    name: StorNyckelbiotoper
+    description: Storskogsbrukets Nyckelbiotoper från skogsstyrelsen, kod 113 i GISS
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksStorskogsbrNyckelb_gpkg.zip
+    enabled: true
+
+  - id: sumpskogar
+    name: Sumpskogar
+    description: Sumpskogar från skogsstyrelsen, kod 114 i GISS
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSumpskogar_gpkg.zip
+    enabled: true
+
+  - id: Forsok
+    name: Forsok
+    description: Forsok från silvaboreal, kod 116 i GISS
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://wms.slu.se/silvaboreal/esf/ows
+    enabled: false
+
+  - id: Naturvardsomrade
+    name: Naturvardsomrade
+    description: Naturvardsomrade från naturvardsverket, kod 118 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVO.zip
+    enabled: true
+
+  - id: jordarter25k-100k
+    name: jordarter25k-100k
+    description: jordarter25k-100k från SGU, kod 116 i GISS
+    typ: sgu_gpkg
+    plugin: zip_geopackage
+    url: https://resource.sgu.se/data/oppnadata/jordarter25k-100k/jordarter25k-100k.zip
+    enabled: false
+
+  - id: torvlagerfoljder
+    name: torvlagerfoljder
+    description: torvlagerfoljder från SGU, kod 116 i GISS
+    typ: sgu_gpkg
+    plugin: zip_geopackage
+    url: https://resource.sgu.se/data/oppnadata/torvlagerfoljder/torvlagerfoljder.zip
+    enabled: true
+
+  # === NYA DATASET: Skogsstyrelsen ===
+
+  - id: utford_avverkning
+    name: Utford_avverkning
+    description: Utförda avverkningar från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksUtfordAvverkning_gpkg.zip
+    enabled: true
+
+  - id: skog_med_hoga_naturvarden
+    name: Skog_med_hoga_naturvarden
+    description: Skog med höga naturvärden (SMHN) från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogMedHogaNaturvarden_gpkg.zip
+    enabled: true
+
+  - id: frotaktsomraden
+    name: Frotaktsomraden
+    description: Frötäktsområden från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksFrotaktsomraden_gpkg.zip
+    enabled: true
+
+  - id: skogshistorisk_karta
+    name: Skogshistorisk_karta
+    description: Skogshistoriska data från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogshistoriskKarta_gpkg.zip
+    enabled: true
+
+  # === NYA DATASET: Naturvårdsverket ===
+
+  - id: kulturreservat
+    name: Kulturreservat
+    description: Kulturreservat från Naturvårdsverket
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/KR.zip
+    enabled: true
+
+  - id: naturminnen
+    name: Naturminnen
+    description: Naturminnen från Naturvårdsverket
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
+    enabled: true
+
+  - id: ramsar_vatmarker
+    name: Ramsar_vatmarker
+    description: Ramsar-våtmarker (internationellt skyddade)
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/Ramsar_2018.zip
+    enabled: true
+
+  - id: skyddsvarda_statliga_skogar
+    name: Skyddsvarda_statliga_skogar
+    description: Skyddsvärda statliga skogar från Naturvårdsverket
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/Skog/Skyddsvarda_statliga_skogar.zip
+    enabled: true
+
+  - id: skogliga_vardekarnor
+    name: Skogliga_vardekarnor
+    description: Skogliga värdekärnor nationell analys (314 MB)
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/Skog/analys_nationellt.zip
+    enabled: true
+
+  # === NYA DATASET: Övriga ===
+
+  - id: dikningsforetagskartan
+    name: Dikningsforetagskartan
+    description: Dikningsföretag för skogsmark
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/diken/Dikningsforetagskartan.zip
     enabled: true

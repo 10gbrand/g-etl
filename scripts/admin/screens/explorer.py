@@ -1,7 +1,5 @@
 """Data Explorer screen med ASCII-karta för geometrivalidering."""
 
-from pathlib import Path
-
 import duckdb
 from textual import work
 from textual.app import ComposeResult
@@ -9,6 +7,7 @@ from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.screen import Screen
 from textual.widgets import (
+    DataTable,
     Footer,
     Header,
     Label,
@@ -17,10 +16,8 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
+from config.settings import settings
 from scripts.admin.widgets.ascii_map import BrailleMapWidget
-
-# SQL-initieringsfiler
-SQL_INIT_PATH = Path("sql/_init")
 
 
 class TableInfo(Static):
@@ -114,6 +111,7 @@ class ExplorerScreen(Screen):
 
     #right-panel {
         height: 100%;
+        overflow: hidden;
     }
 
     #table-info {
@@ -121,18 +119,20 @@ class ExplorerScreen(Screen):
     }
 
     #map-container {
-        height: 100%;
-        min-height: 20;
+        height: auto;
+        max-height: 20;
+        overflow-y: auto;
     }
 
     #data-preview-container {
-        height: 100%;
+        height: 1fr;
+        min-height: 10;
         border: solid $accent;
-        display: none;
+        padding: 0;
     }
 
-    #data-preview-container.visible {
-        display: block;
+    #data-table {
+        height: 100%;
     }
 
     #footer-row {
@@ -169,7 +169,9 @@ class ExplorerScreen(Screen):
         with Vertical(id="right-panel"):
             yield TableInfo(id="table-info")
             with Container(id="map-container"):
-                yield BrailleMapWidget(width=60, height=24, title="Geometri-förhandsvisning")
+                yield BrailleMapWidget(width=60, height=15, title="Geometri-förhandsvisning")
+            with Container(id="data-preview-container"):
+                yield DataTable(id="data-table")
 
         yield Footer()
 
@@ -287,10 +289,26 @@ class ExplorerScreen(Screen):
                     geometry_col = col_name
                     break
 
+            # Hämta sample-data (10 rader)
+            # Exkludera geometri-kolumner för visning
+            display_cols = [col[0] for col in columns if "GEOMETRY" not in col[1].upper()]
+            if not display_cols:
+                display_cols = [columns[0][0]] if columns else []
+
+            # Begränsa till max 8 kolumner för läsbarhet
+            display_cols = display_cols[:8]
+            cols_str = ", ".join([f'"{c}"' for c in display_cols])
+
+            sample_query = f"SELECT {cols_str} FROM {schema}.{table} LIMIT 10"
+            sample_rows = conn.execute(sample_query).fetchall()
+
             # Uppdatera UI
             def update_ui():
                 info = self.query_one("#table-info", TableInfo)
                 info.set_table(schema, table, row_count, columns, geometry_col is not None)
+
+                # Uppdatera datatabell
+                self._populate_data_table(display_cols, sample_rows)
 
                 # Ladda karta om det finns geometri
                 if geometry_col:
@@ -304,6 +322,31 @@ class ExplorerScreen(Screen):
                 f"Kunde inte ladda tabell-info: {e}",
                 severity="error",
             )
+
+    def _populate_data_table(self, columns: list[str], rows: list[tuple]) -> None:
+        """Fyll datatabellen med sample-data."""
+        data_table = self.query_one("#data-table", DataTable)
+        data_table.clear(columns=True)
+
+        # Lägg till kolumner
+        for col in columns:
+            # Trunkera långa kolumnnamn
+            display_name = col[:15] + "…" if len(col) > 15 else col
+            data_table.add_column(display_name, key=col)
+
+        # Lägg till rader
+        for row in rows:
+            # Trunkera långa värden
+            display_row = []
+            for val in row:
+                if val is None:
+                    display_row.append("NULL")
+                else:
+                    str_val = str(val)
+                    if len(str_val) > 30:
+                        str_val = str_val[:27] + "..."
+                    display_row.append(str_val)
+            data_table.add_row(*display_row)
 
     @work(thread=True)
     def _load_map_data(self, schema: str, table: str, geometry_col: str) -> None:
@@ -322,6 +365,12 @@ class ExplorerScreen(Screen):
 
             # Ladda data
             map_widget.load_from_query(conn, schema, table, geometry_col)
+
+            # Tvinga layout-uppdatering på main thread efter data laddats
+            def refresh_layout():
+                map_widget.refresh(layout=True)
+
+            self.app.call_from_thread(refresh_layout)
 
         except Exception as e:
             self.app.call_from_thread(

@@ -63,3 +63,27 @@ CREATE OR REPLACE MACRO empty_to_null(val) AS
         WHEN TRIM(CAST(val AS VARCHAR)) = '' THEN NULL
         ELSE val
     END;
+
+-- =============================================================================
+-- Staging-makron (för metadata och hashing)
+-- =============================================================================
+
+-- Beräkna MD5-hash av geometri (som WKT)
+CREATE OR REPLACE MACRO geom_md5(geom) AS
+    CASE
+        WHEN geom IS NULL THEN NULL
+        ELSE MD5(ST_AsText(geom))
+    END;
+
+-- Hämta centroid-koordinater i WGS84
+CREATE OR REPLACE MACRO centroid_lat(geom) AS
+    CASE
+        WHEN geom IS NULL THEN NULL
+        ELSE ST_Y(ST_Centroid(ST_Transform(geom, 'EPSG:3006', 'EPSG:4326')))
+    END;
+
+CREATE OR REPLACE MACRO centroid_lng(geom) AS
+    CASE
+        WHEN geom IS NULL THEN NULL
+        ELSE ST_X(ST_Centroid(ST_Transform(geom, 'EPSG:3006', 'EPSG:4326')))
+    END;

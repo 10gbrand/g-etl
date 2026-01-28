@@ -13,10 +13,16 @@ dependencies = [
     "textual>=0.89.0",
     "pyyaml>=6.0.0",
     "pytz>=2024.1",
+    "pyodbc>=5.0.0",
+    "h3>=3.7.0",
 ]
+
+[project.scripts]
+g-etl = "scripts.admin.app:main"
 
 [project.optional-dependencies]
 dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]
+build = ["pyinstaller>=6.0.0"]
 
 [dependency-groups]
 dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]

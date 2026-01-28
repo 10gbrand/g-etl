@@ -38,3 +38,16 @@ tasks:
     desc: Lista alla session-databaser
     cmds:
       - uv run python -c "from scripts.admin.services.db_session import list_databases; [print(f'{p.name}') for p, _, s in list_databases()]"
+
+  build:
+    desc: Bygg fristående executable med PyInstaller
+    cmds:
+      - uv pip install pyinstaller
+      - uv run pyinstaller g_etl.spec
+    generates:
+      - dist/g-etl*
+
+  build-clean:
+    desc: Rensa build-artefakter
+    cmds:
+      - rm -rf build/ dist/ *.spec.bak

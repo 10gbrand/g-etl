@@ -5,8 +5,7 @@ from pathlib import Path
 
 import duckdb
 
-# Standardkatalog för databasfiler
-DATA_DIR = Path("data")
+from config.settings import settings
 
 
 def get_session_db_path() -> Path:
@@ -14,9 +13,9 @@ def get_session_db_path() -> Path:
 
     Returnerar sökväg som: data/warehouse_20260128_103045.duckdb
     """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return DATA_DIR / f"warehouse_{timestamp}.duckdb"
+    return settings.DATA_DIR / f"{settings.DB_PREFIX}_{timestamp}{settings.DB_EXTENSION}"
 
 
 def get_latest_db_path() -> Path | None:
@@ -24,8 +23,9 @@ def get_latest_db_path() -> Path | None:
 
     Returnerar None om ingen databas finns.
     """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db_files = sorted(DATA_DIR.glob("warehouse_*.duckdb"), reverse=True)
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    pattern = f"{settings.DB_PREFIX}_*{settings.DB_EXTENSION}"
+    db_files = sorted(settings.DATA_DIR.glob(pattern), reverse=True)
 
     # Filtrera bort WAL och andra temporära filer
     db_files = [f for f in db_files if not f.suffix.endswith(".wal")]
@@ -33,22 +33,26 @@ def get_latest_db_path() -> Path | None:
     return db_files[0] if db_files else None
 
 
-def cleanup_old_databases(keep_count: int = 3) -> list[Path]:
+def cleanup_old_databases(keep_count: int | None = None) -> list[Path]:
     """Ta bort gamla databasfiler, behåll de senaste.
 
     Args:
-        keep_count: Antal databasfiler att behålla (default: 3)
+        keep_count: Antal databasfiler att behålla (default från settings)
 
     Returns:
         Lista med borttagna filer
     """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if keep_count is None:
+        keep_count = settings.DB_KEEP_COUNT
+
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # Hitta alla databasfiler
-    db_files = sorted(DATA_DIR.glob("warehouse_*.duckdb"), reverse=True)
+    pattern = f"{settings.DB_PREFIX}_*{settings.DB_EXTENSION}"
+    db_files = sorted(settings.DATA_DIR.glob(pattern), reverse=True)
 
     # Filtrera ut huvudfiler (inte WAL etc)
-    main_files = [f for f in db_files if f.suffix == ".duckdb"]
+    main_files = [f for f in db_files if f.suffix == settings.DB_EXTENSION]
 
     removed: list[Path] = []
 
@@ -60,20 +64,20 @@ def cleanup_old_databases(keep_count: int = 3) -> list[Path]:
             removed.append(db_file)
 
             # Ta bort relaterade filer (WAL, etc)
-            for related in DATA_DIR.glob(f"{db_file.stem}*"):
+            for related in settings.DATA_DIR.glob(f"{db_file.stem}*"):
                 related.unlink()
                 removed.append(related)
         except OSError:
             pass  # Filen kan vara låst
 
     # Ta även bort den gamla warehouse.duckdb om den finns
-    old_db = DATA_DIR / "warehouse.duckdb"
+    old_db = settings.DATA_DIR / f"{settings.DB_PREFIX}{settings.DB_EXTENSION}"
     if old_db.exists():
         try:
             old_db.unlink()
             removed.append(old_db)
             # Relaterade filer
-            for related in DATA_DIR.glob("warehouse.duckdb*"):
+            for related in settings.DATA_DIR.glob(f"{settings.DB_PREFIX}{settings.DB_EXTENSION}*"):
                 related.unlink()
                 removed.append(related)
         except OSError:
@@ -84,14 +88,14 @@ def cleanup_old_databases(keep_count: int = 3) -> list[Path]:
 
 def init_database(conn: duckdb.DuckDBPyConnection) -> None:
     """Initiera databas med extensions och scheman."""
-    for ext in ["spatial", "parquet", "httpfs", "json"]:
+    for ext in settings.DUCKDB_EXTENSIONS:
         try:
             conn.execute(f"INSTALL {ext}")
             conn.execute(f"LOAD {ext}")
         except Exception:
             pass
 
-    for schema in ["raw", "staging", "mart"]:
+    for schema in settings.DUCKDB_SCHEMAS:
         conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
 
@@ -101,15 +105,118 @@ def list_databases() -> list[tuple[Path, str, int]]:
     Returns:
         Lista med tuples: (sökväg, tidsstämpel, storlek i MB)
     """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db_files = sorted(DATA_DIR.glob("warehouse_*.duckdb"), reverse=True)
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    pattern = f"{settings.DB_PREFIX}_*{settings.DB_EXTENSION}"
+    db_files = sorted(settings.DATA_DIR.glob(pattern), reverse=True)
 
     result = []
     for f in db_files:
-        if f.suffix == ".duckdb":
+        if f.suffix == settings.DB_EXTENSION:
             size_mb = f.stat().st_size // (1024 * 1024)
             # Extrahera tidsstämpel från filnamn
-            timestamp_str = f.stem.replace("warehouse_", "")
+            timestamp_str = f.stem.replace(f"{settings.DB_PREFIX}_", "")
             result.append((f, timestamp_str, size_mb))
 
     return result
+
+
+def cleanup_all_databases() -> tuple[int, int]:
+    """Ta bort ALLA databasfiler i data/.
+
+    Returns:
+        Tuple med (antal borttagna filer, total storlek i MB)
+    """
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    removed_count = 0
+    total_size = 0
+
+    # Ta bort alla .duckdb-filer och relaterade filer
+    for db_file in settings.DATA_DIR.glob(f"*{settings.DB_EXTENSION}*"):
+        try:
+            total_size += db_file.stat().st_size
+            db_file.unlink()
+            removed_count += 1
+        except OSError:
+            pass  # Filen kan vara låst
+
+    return removed_count, total_size // (1024 * 1024)
+
+
+def cleanup_all_parquet() -> tuple[int, int]:
+    """Ta bort ALLA parquet-filer i data/raw/.
+
+    Returns:
+        Tuple med (antal borttagna filer, total storlek i MB)
+    """
+    settings.RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+    removed_count = 0
+    total_size = 0
+
+    for parquet_file in settings.RAW_DIR.glob("*.parquet"):
+        try:
+            total_size += parquet_file.stat().st_size
+            parquet_file.unlink()
+            removed_count += 1
+        except OSError:
+            pass
+
+    return removed_count, total_size // (1024 * 1024)
+
+
+def cleanup_all_logs() -> tuple[int, int]:
+    """Ta bort ALLA loggfiler i logs/.
+
+    Returns:
+        Tuple med (antal borttagna filer, total storlek i MB)
+    """
+    settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    removed_count = 0
+    total_size = 0
+
+    for log_file in settings.LOGS_DIR.glob("*.log"):
+        try:
+            total_size += log_file.stat().st_size
+            log_file.unlink()
+            removed_count += 1
+        except OSError:
+            pass
+
+    return removed_count, total_size // (1024 * 1024)
+
+
+def get_data_stats() -> dict:
+    """Hämta statistik om data-filer.
+
+    Returns:
+        Dict med antal och storlek för databaser, parquet-filer och loggar
+    """
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings.RAW_DIR.mkdir(parents=True, exist_ok=True)
+    settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Databaser
+    db_files = list(settings.DATA_DIR.glob(f"*{settings.DB_EXTENSION}"))
+    db_count = len(db_files)
+    db_size = sum(f.stat().st_size for f in db_files) // (1024 * 1024)
+
+    # Parquet-filer
+    parquet_files = list(settings.RAW_DIR.glob("*.parquet"))
+    parquet_count = len(parquet_files)
+    parquet_size = sum(f.stat().st_size for f in parquet_files) // (1024 * 1024)
+
+    # Loggfiler
+    log_files = list(settings.LOGS_DIR.glob("*.log"))
+    log_count = len(log_files)
+    log_size = sum(f.stat().st_size for f in log_files) // (1024 * 1024)
+
+    return {
+        "db_count": db_count,
+        "db_size_mb": db_size,
+        "parquet_count": parquet_count,
+        "parquet_size_mb": parquet_size,
+        "log_count": log_count,
+        "log_size_mb": log_size,
+    }

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
+import geopandas as gpd
 import requests
 
 from plugins.base import ExtractResult, SourcePlugin
@@ -31,10 +32,12 @@ class ZipShapefilePlugin(SourcePlugin):
             url: URL till zip-filen
             id: Tabellnamn i DuckDB
             shp_filename: Filnamn på .shp i zip:en (optional, hittas automatiskt)
+            encoding: Teckenkodning för DBF-filen (default: LATIN1 för svenska myndighetsdata)
         """
         url = config.get("url")
         table_name = config.get("id")  # Använd alltid id som tabellnamn
         shp_filename = config.get("shp_filename")
+        encoding = config.get("encoding", "LATIN1")
 
         if not url:
             return ExtractResult(
@@ -121,13 +124,26 @@ class ZipShapefilePlugin(SourcePlugin):
                 if missing:
                     self._log(f"Varning: saknar kompanjonsfiler: {missing}", on_log)
 
-                self._log(f"Läser {shp_path.name}...", on_log)
-                self._progress(0.7, f"Läser {shp_path.name}...", on_progress)
+                self._log(f"Läser {shp_path.name} med encoding {encoding}...", on_log)
+                self._progress(0.65, f"Läser {shp_path.name}...", on_progress)
 
-                # Läs in till DuckDB
+                # Läs Shapefile med geopandas (hanterar encoding korrekt)
+                gdf = gpd.read_file(shp_path, encoding=encoding)
+
+                self._log(f"Sparar till GeoParquet...", on_log)
+                self._progress(0.75, "Sparar till GeoParquet...", on_progress)
+
+                # Spara som GeoParquet (kringgår DuckDB encoding-bugg)
+                parquet_path = Path(tmp_dir) / f"{table_name}.parquet"
+                gdf.to_parquet(parquet_path)
+
+                self._log(f"Laddar in i DuckDB...", on_log)
+                self._progress(0.85, "Laddar in i DuckDB...", on_progress)
+
+                # Läs in GeoParquet till DuckDB
                 conn.execute(f"""
                     CREATE OR REPLACE TABLE raw.{table_name} AS
-                    SELECT * FROM ST_Read('{shp_path}')
+                    SELECT * FROM '{parquet_path}'
                 """)
 
                 self._progress(0.9, "Räknar rader...", on_progress)
