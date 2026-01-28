@@ -6,6 +6,7 @@ from plugins.geoparquet import GeoParquetPlugin
 from plugins.lantmateriet import LantmaterietPlugin
 from plugins.wfs import WfsPlugin
 from plugins.zip_geopackage import ZipGeoPackagePlugin
+from plugins.zip_shapefile import ZipShapefilePlugin
 
 PLUGINS: dict[str, type[SourcePlugin]] = {
     "wfs": WfsPlugin,
@@ -13,6 +14,7 @@ PLUGINS: dict[str, type[SourcePlugin]] = {
     "geopackage": GeoPackagePlugin,
     "geoparquet": GeoParquetPlugin,
     "zip_geopackage": ZipGeoPackagePlugin,
+    "zip_shapefile": ZipShapefilePlugin,
 }
 
 

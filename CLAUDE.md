@@ -29,12 +29,7 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 **Admin TUI:**
 - `task admin:run` - Starta admin TUI
 - `task admin:mock` - Starta med mockdata (för test)
-
-**Web Interface:**
-
-- `task web:dev` - Starta webbgränssnitt lokalt (med auto-reload)
-- `task web:docker` - Starta via Docker (`http://localhost:8000`)
-- `task web:docker-bg` - Starta i bakgrunden
+- `task admin:docker` - Starta admin TUI i Docker
 
 **Docker:**
 - `task docker:up` - Starta containers
@@ -44,11 +39,10 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 ## Architecture
 
 ```text
-Web UI (FastAPI)  ─┐
-                   ├→ Pipeline Runner → Plugins → DuckDB
-Admin TUI (Textual)┘                        ↓
-                                     SQL-transformationer
-                                     (staging/ → mart/)
+Admin TUI (Textual) → Pipeline Runner → Plugins → DuckDB
+                                              ↓
+                                       SQL-transformationer
+                                       (staging/ → mart/)
 ```
 
 **Dataflöde genom DuckDB-scheman:**
@@ -65,7 +59,6 @@ Admin TUI (Textual)┘                        ↓
 - `scripts/pipeline.py` - Pipeline-runner (CLI)
 - `scripts/db.py` - Gemensamma databasverktyg
 - `scripts/admin/app.py` - Textual TUI-applikation
-- `scripts/web/app.py` - FastAPI webbgränssnitt
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
 
 **DuckDB-initiering (sql/_init/):**

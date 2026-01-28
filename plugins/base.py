@@ -35,6 +35,7 @@ class SourcePlugin(ABC):
         config: dict,
         conn: duckdb.DuckDBPyConnection,
         on_log: Callable[[str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
         """Hämtar data och laddar till raw-schema.
 
@@ -42,6 +43,7 @@ class SourcePlugin(ABC):
             config: Dataset-konfiguration med plugin-specifika parametrar
             conn: DuckDB-anslutning
             on_log: Callback för loggmeddelanden
+            on_progress: Callback för progress (0.0-1.0, meddelande)
 
         Returns:
             ExtractResult med status och antal rader
@@ -52,3 +54,13 @@ class SourcePlugin(ABC):
         """Hjälpmetod för att logga meddelanden."""
         if on_log:
             on_log(message)
+
+    def _progress(
+        self,
+        progress: float,
+        message: str,
+        on_progress: Callable[[float, str], None] | None,
+    ):
+        """Hjälpmetod för att rapportera progress."""
+        if on_progress:
+            on_progress(progress, message)

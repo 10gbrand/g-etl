@@ -1,94 +1,4 @@
 datasets:
-  - id: naturreservat
-    name: Naturreservat
-    description: Naturreservat från Naturvårdsverket
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.NATURRESERVAT
-    enabled: false
-
-  - id: nyckelbiotoper
-    name: Nyckelbiotoper
-    description: Nyckelbiotoper från Skogsstyrelsen
-    typ: skogsstyrelsen_wfs
-    plugin: wfs
-    url: https://geodpags.skogsstyrelsen.se/geodataport/services/Nyckelbiotoper
-    layer: Nyckelbiotop
-    enabled: false
-
-  - id: n2000
-    name: Natura 2000
-    description: Natura 2000-områden
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.NATURA2000_SCI
-    enabled: false
-
-  - id: riksintressen_naturvard
-    name: Riksintressen naturvård
-    description: Riksintressen för naturvård
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.RIKSINTRESSE_NATURVARD
-    enabled: false
-
-  - id: riksintressen_friluftsliv
-    name: Riksintressen friluftsliv
-    description: Riksintressen för friluftsliv
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.RIKSINTRESSE_FRILUFTSLIV
-    enabled: false
-
-  - id: strandskydd
-    name: Strandskydd
-    description: Strandskyddsområden
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.STRANDSKYDD
-    enabled: false
-
-  - id: biotopskydd
-    name: Biotopskyddsområden
-    description: Biotopskyddsområden
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.BIOTOPSKYDD
-    enabled: false
-
-  - id: naturminnen
-    name: Naturminnen
-    description: Naturminnen
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.NATURMINNE
-    enabled: false
-
-  - id: nationalparker
-    name: Nationalparker
-    description: Sveriges nationalparker
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.NATIONALPARK
-    enabled: false
-
-  - id: vattenskyddsomraden
-    name: Vattenskyddsområden
-    description: Vattenskyddsområden
-    typ: naturvardsverket_wfs
-    plugin: wfs
-    url: https://geodata.naturvardsverket.se/naturvardsregistret/wfs
-    layer: NVR.VATTENSKYDDSOMRADE
-    enabled: false
-
   - id: avverkningsanmalningar
     name: Avverkningsanmalningar
     description: Avverkningsanmälda områden från Skogsstyrelsen
@@ -111,4 +21,20 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
+    enabled: true
+
+  - id: nationalparker
+    name: Nationalparker
+    description: Nationalparker från naturvardsverket, kod 101 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NP.zip
+    enabled: true
+
+  - id: naturreservat
+    name: Naturreservat
+    description: Naturreservat från naturvardsverket, kod 102 i GISS
+    typ: naturvardsverket_gpkg
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NR.zip
     enabled: true

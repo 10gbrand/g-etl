@@ -36,6 +36,7 @@ class LantmaterietPlugin(SourcePlugin):
         config: dict,
         conn: duckdb.DuckDBPyConnection,
         on_log: Callable[[str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
         """Hämtar data från Lantmäteriets API.
 
@@ -55,13 +56,17 @@ class LantmaterietPlugin(SourcePlugin):
             )
 
         self._log(f"Hämtar från Lantmäteriet: {endpoint}...", on_log)
+        self._progress(0.1, "Ansluter till Lantmäteriet API...", on_progress)
 
         try:
             headers = self._get_auth_headers()
             url = f"{self.BASE_URL}{endpoint}"
 
+            self._progress(0.2, f"Laddar ner {endpoint}...", on_progress)
             response = requests.get(url, headers=headers, params=params, timeout=60)
             response.raise_for_status()
+
+            self._progress(0.5, "Bearbetar GeoJSON...", on_progress)
 
             # Spara som temporär GeoJSON och läs in
             data = response.json()
@@ -74,6 +79,7 @@ class LantmaterietPlugin(SourcePlugin):
                 json.dump(data, f)
                 temp_path = f.name
 
+            self._progress(0.7, "Laddar till databas...", on_progress)
             conn.execute(f"""
                 CREATE OR REPLACE TABLE raw.{table_name} AS
                 SELECT * FROM ST_Read('{temp_path}')
@@ -81,10 +87,12 @@ class LantmaterietPlugin(SourcePlugin):
 
             os.unlink(temp_path)
 
+            self._progress(0.9, "Räknar rader...", on_progress)
             result = conn.execute(f"SELECT COUNT(*) FROM raw.{table_name}").fetchone()
             rows_count = result[0] if result else 0
 
             self._log(f"Hämtade {rows_count} rader till raw.{table_name}", on_log)
+            self._progress(1.0, f"Hämtade {rows_count} rader", on_progress)
 
             return ExtractResult(
                 success=True,

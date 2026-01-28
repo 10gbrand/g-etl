@@ -9,6 +9,7 @@ from textual.app import App
 from scripts.admin.models.dataset import DatasetConfig
 from scripts.admin.screens.explorer import ExplorerScreen
 from scripts.admin.screens.pipeline import PipelineScreen
+from scripts.admin.services.db_session import cleanup_old_databases, get_session_db_path
 
 
 class AdminApp(App):
@@ -34,15 +35,24 @@ class AdminApp(App):
         self.config = DatasetConfig.load(config_path)
         self.mock_mode = mock
 
+        # Skapa ny sessionsspecifik databas
+        self.db_path = str(get_session_db_path())
+
+        # Rensa gamla databasfiler (behåll 3 senaste)
+        cleanup_old_databases(keep_count=3)
+
     def on_mount(self) -> None:
         """Installera screens och visa pipeline-screen."""
         # Registrera screens med factory-funktioner för lazy loading
+        # Alla screens delar samma databas-sökväg
         self.install_screen(
-            lambda: PipelineScreen(config=self.config, mock=self.mock_mode),
+            lambda: PipelineScreen(
+                config=self.config, mock=self.mock_mode, db_path=self.db_path
+            ),
             name="pipeline",
         )
         self.install_screen(
-            ExplorerScreen,
+            lambda: ExplorerScreen(db_path=self.db_path),
             name="explorer",
         )
 

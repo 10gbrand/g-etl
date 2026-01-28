@@ -20,6 +20,7 @@ class GeoParquetPlugin(SourcePlugin):
         config: dict,
         conn: duckdb.DuckDBPyConnection,
         on_log: Callable[[str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
         """Läser GeoParquet-fil och laddar till raw-schema.
 
@@ -47,7 +48,9 @@ class GeoParquetPlugin(SourcePlugin):
                     message=f"Filen finns inte: {file_path}",
                 )
 
+        source_desc = "URL" if is_remote else "fil"
         self._log(f"Läser {file_path}...", on_log)
+        self._progress(0.1, f"Läser parquet-{source_desc}...", on_progress)
 
         try:
             # DuckDB kan läsa parquet direkt, inklusive via httpfs
@@ -56,10 +59,13 @@ class GeoParquetPlugin(SourcePlugin):
                 SELECT * FROM read_parquet('{file_path}')
             """)
 
+            self._progress(0.9, "Räknar rader...", on_progress)
+
             result = conn.execute(f"SELECT COUNT(*) FROM raw.{table_name}").fetchone()
             rows_count = result[0] if result else 0
 
             self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
+            self._progress(1.0, f"Läste {rows_count} rader", on_progress)
 
             return ExtractResult(
                 success=True,

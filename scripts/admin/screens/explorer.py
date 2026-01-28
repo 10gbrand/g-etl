@@ -17,7 +17,7 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from scripts.admin.widgets.ascii_map import AsciiMapWidget
+from scripts.admin.widgets.ascii_map import BrailleMapWidget
 
 # SQL-initieringsfiler
 SQL_INIT_PATH = Path("sql/_init")
@@ -35,8 +35,8 @@ class TableInfo(Static):
     }
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.table_name = ""
         self.row_count = 0
         self.columns: list[tuple[str, str]] = []
@@ -169,7 +169,7 @@ class ExplorerScreen(Screen):
         with Vertical(id="right-panel"):
             yield TableInfo(id="table-info")
             with Container(id="map-container"):
-                yield AsciiMapWidget(width=50, height=16, title="Geometri-förhandsvisning")
+                yield BrailleMapWidget(width=60, height=24, title="Geometri-förhandsvisning")
 
         yield Footer()
 
@@ -180,7 +180,7 @@ class ExplorerScreen(Screen):
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """Hämta databasanslutning."""
         if self._conn is None:
-            self._conn = duckdb.connect(self.db_path, read_only=True)
+            self._conn = duckdb.connect(self.db_path)
             self._init_extensions()
         return self._conn
 
@@ -310,7 +310,7 @@ class ExplorerScreen(Screen):
         """Ladda geometri-data för kartan."""
         try:
             conn = self._get_connection()
-            map_widget = self.query_one(AsciiMapWidget)
+            map_widget = self.query_one(BrailleMapWidget)
 
             # Uppdatera titeln
             def set_title():

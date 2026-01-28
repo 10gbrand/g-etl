@@ -90,11 +90,21 @@ class PipelineRunner:
                 dataset=dataset_name,
             ))
 
+        # Skapa on_progress callback som bryggar till on_event
+        def on_progress(progress: float, message: str) -> None:
+            if on_event:
+                on_event(PipelineEvent(
+                    event_type="progress",
+                    message=message,
+                    dataset=dataset_name,
+                    progress=progress,
+                ))
+
         # Kör extract i executor för att inte blocka event loop
         conn = self._get_connection()
 
         def do_extract():
-            return plugin.extract(dataset_config, conn, on_log)
+            return plugin.extract(dataset_config, conn, on_log, on_progress=on_progress)
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, do_extract)

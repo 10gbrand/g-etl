@@ -19,6 +19,7 @@ from textual.widgets import (
 
 from scripts.admin.models.dataset import Dataset, DatasetConfig, DatasetStatus
 from scripts.admin.services.pipeline_runner import MockPipelineRunner, PipelineRunner
+from scripts.pipeline import FileLogger
 from scripts.admin.widgets.multi_progress import (
     MultiProgressWidget,
     TaskProgress,
@@ -221,13 +222,16 @@ class PipelineScreen(Screen):
         self,
         config: DatasetConfig,
         mock: bool = False,
+        db_path: str = "data/warehouse.duckdb",
     ) -> None:
         super().__init__()
         self.config = config
         self.mock_mode = mock
+        self.db_path = db_path
         self.runner: PipelineRunner | None = None
         self._running = False
         self.current_type_filter: str | None = None
+        self._file_logger: FileLogger | None = None
 
     def compose(self) -> ComposeResult:
         """Bygg screen-layouten."""
@@ -314,10 +318,14 @@ class PipelineScreen(Screen):
         return self.config.get_enabled()
 
     def log_message(self, message: str) -> None:
-        """Lägg till meddelande i loggen."""
+        """Lägg till meddelande i loggen (UI + fil)."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         log = self.query_one("#log", Log)
         log.write_line(f"[{timestamp}] {message}")
+
+        # Skriv även till fil om loggning är aktiv
+        if self._file_logger:
+            self._file_logger.log(message)
 
     def update_dataset_status(self, dataset_id: str, status: DatasetStatus) -> None:
         """Uppdatera status för ett dataset."""
@@ -341,6 +349,11 @@ class PipelineScreen(Screen):
             self.log_message("Inga datasets att köra")
             return
 
+        # Starta filloggning
+        self._file_logger = FileLogger(prefix="tui_pipeline")
+        log_file = self._file_logger.start()
+        self.log_message(f"Loggar till: {log_file}")
+
         self.set_running_state(True)
         progress = self.query_one(MultiProgressWidget)
         progress.reset()
@@ -361,7 +374,7 @@ class PipelineScreen(Screen):
         if self.mock_mode:
             self.runner = MockPipelineRunner()
         else:
-            self.runner = PipelineRunner()
+            self.runner = PipelineRunner(db_path=self.db_path)
 
         progress.set_phase("Extract")
         self.log_message(f"Startar {len(datasets)} dataset(s)...")
@@ -442,6 +455,11 @@ class PipelineScreen(Screen):
         if self.runner:
             self.runner.close()
 
+        # Stäng filloggning
+        if self._file_logger:
+            self._file_logger.close()
+            self._file_logger = None
+
     async def action_run_selected(self) -> None:
         """Kör valda datasets."""
         datasets = self.get_selected_datasets()
@@ -470,6 +488,11 @@ class PipelineScreen(Screen):
         self.log_message("Stoppar...")
         self.set_running_state(False)
 
+        # Stäng filloggning vid stopp
+        if self._file_logger:
+            self._file_logger.close()
+            self._file_logger = None
+
     def action_clear_selection(self) -> None:
         """Rensa alla val."""
         for row in self.query(DatasetRow):
@@ -484,6 +507,10 @@ class PipelineScreen(Screen):
         self.log_message(f"Växlade till {mode_text}-läge")
         title = self.query_one("#app-title", Label)
         title.update(f"G-ETL Pipeline [{mode_text}]")
+
+    def action_quit(self) -> None:
+        """Avsluta applikationen."""
+        self.app.exit()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Hantera knapptryckningar."""

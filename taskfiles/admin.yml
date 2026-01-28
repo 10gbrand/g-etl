@@ -28,3 +28,13 @@ tasks:
     dir: docker
     cmds:
       - docker compose build admin
+
+  cleanup:
+    desc: Rensa gamla databasfiler (behåll 3 senaste)
+    cmds:
+      - uv run python -c "from scripts.admin.services.db_session import cleanup_old_databases; removed = cleanup_old_databases(3); print(f'Tog bort {len(removed)} filer')"
+
+  list-db:
+    desc: Lista alla session-databaser
+    cmds:
+      - uv run python -c "from scripts.admin.services.db_session import list_databases; [print(f'{p.name}') for p, _, s in list_databases()]"

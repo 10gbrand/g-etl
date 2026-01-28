@@ -19,6 +19,7 @@ class WfsPlugin(SourcePlugin):
         config: dict,
         conn: duckdb.DuckDBPyConnection,
         on_log: Callable[[str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
         """Hämtar data från WFS och laddar till raw-schema.
 
@@ -42,6 +43,7 @@ class WfsPlugin(SourcePlugin):
             )
 
         self._log(f"Hämtar {layer} från {url}...", on_log)
+        self._progress(0.1, f"Hämtar från WFS: {layer}...", on_progress)
 
         # Bygg WFS-URL
         wfs_url = (
@@ -58,11 +60,14 @@ class WfsPlugin(SourcePlugin):
                 SELECT * FROM ST_Read('{wfs_url}')
             """)
 
+            self._progress(0.9, "Räknar rader...", on_progress)
+
             # Hämta antal rader
             result = conn.execute(f"SELECT COUNT(*) FROM raw.{table_name}").fetchone()
             rows_count = result[0] if result else 0
 
             self._log(f"Hämtade {rows_count} rader till raw.{table_name}", on_log)
+            self._progress(1.0, f"Hämtade {rows_count} rader", on_progress)
 
             return ExtractResult(
                 success=True,

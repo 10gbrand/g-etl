@@ -1,4 +1,4 @@
-"""Plugin för att ladda ner och läsa zippade GeoPackage-filer."""
+"""Plugin för att ladda ner och läsa zippade Shapefile-filer."""
 
 import tempfile
 import zipfile
@@ -11,12 +11,12 @@ import requests
 from plugins.base import ExtractResult, SourcePlugin
 
 
-class ZipGeoPackagePlugin(SourcePlugin):
-    """Plugin för att ladda ner zippade GeoPackage-filer från URL."""
+class ZipShapefilePlugin(SourcePlugin):
+    """Plugin för att ladda ner zippade Shapefile-filer från URL."""
 
     @property
     def name(self) -> str:
-        return "zip_geopackage"
+        return "zip_shapefile"
 
     def extract(
         self,
@@ -25,18 +25,16 @@ class ZipGeoPackagePlugin(SourcePlugin):
         on_log: Callable[[str], None] | None = None,
         on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
-        """Laddar ner zip, extraherar GeoPackage och laddar till raw-schema.
+        """Laddar ner zip, extraherar Shapefile och laddar till raw-schema.
 
         Config-parametrar:
             url: URL till zip-filen
-            name: Tabellnamn i DuckDB
-            layer: Specifikt lager att läsa (optional)
-            gpkg_filename: Filnamn på .gpkg i zip:en (optional, hittas automatiskt)
+            id: Tabellnamn i DuckDB
+            shp_filename: Filnamn på .shp i zip:en (optional, hittas automatiskt)
         """
         url = config.get("url")
         table_name = config.get("id")  # Använd alltid id som tabellnamn
-        layer = config.get("layer")
-        gpkg_filename = config.get("gpkg_filename")
+        shp_filename = config.get("shp_filename")
 
         if not url:
             return ExtractResult(
@@ -84,7 +82,7 @@ class ZipGeoPackagePlugin(SourcePlugin):
 
                 zip_path = tmp_zip.name
 
-            self._log("Extraherar GeoPackage...", on_log)
+            self._log("Extraherar Shapefile...", on_log)
             self._progress(0.6, "Extraherar zip-arkiv...", on_progress)
 
             # Extrahera zip
@@ -92,38 +90,44 @@ class ZipGeoPackagePlugin(SourcePlugin):
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     zf.extractall(tmp_dir)
 
-                # Hitta .gpkg-fil
-                if gpkg_filename:
-                    gpkg_path = Path(tmp_dir) / gpkg_filename
+                # Hitta .shp-fil
+                if shp_filename:
+                    shp_path = Path(tmp_dir) / shp_filename
                 else:
-                    gpkg_files = list(Path(tmp_dir).rglob("*.gpkg"))
-                    if not gpkg_files:
+                    shp_files = list(Path(tmp_dir).rglob("*.shp"))
+                    if not shp_files:
                         return ExtractResult(
                             success=False,
-                            message="Ingen .gpkg-fil hittades i zip-arkivet",
+                            message="Ingen .shp-fil hittades i zip-arkivet",
                         )
-                    gpkg_path = gpkg_files[0]
-                    if len(gpkg_files) > 1:
-                        self._log(f"Flera .gpkg-filer hittades, använder {gpkg_path.name}", on_log)
+                    shp_path = shp_files[0]
+                    if len(shp_files) > 1:
+                        self._log(f"Flera .shp-filer hittades, använder {shp_path.name}", on_log)
 
-                if not gpkg_path.exists():
+                if not shp_path.exists():
                     return ExtractResult(
                         success=False,
-                        message=f"GeoPackage-filen finns inte: {gpkg_path}",
+                        message=f"Shapefile-filen finns inte: {shp_path}",
                     )
 
-                self._log(f"Läser {gpkg_path.name}...", on_log)
-                self._progress(0.7, f"Läser {gpkg_path.name}...", on_progress)
+                # Kontrollera att nödvändiga kompanjonsfiler finns
+                required_companions = [".dbf", ".shx"]
+                missing = []
+                for ext in required_companions:
+                    companion = shp_path.with_suffix(ext)
+                    if not companion.exists():
+                        missing.append(ext)
+
+                if missing:
+                    self._log(f"Varning: saknar kompanjonsfiler: {missing}", on_log)
+
+                self._log(f"Läser {shp_path.name}...", on_log)
+                self._progress(0.7, f"Läser {shp_path.name}...", on_progress)
 
                 # Läs in till DuckDB
-                if layer:
-                    read_expr = f"ST_Read('{gpkg_path}', layer='{layer}')"
-                else:
-                    read_expr = f"ST_Read('{gpkg_path}')"
-
                 conn.execute(f"""
                     CREATE OR REPLACE TABLE raw.{table_name} AS
-                    SELECT * FROM {read_expr}
+                    SELECT * FROM ST_Read('{shp_path}')
                 """)
 
                 self._progress(0.9, "Räknar rader...", on_progress)
@@ -140,7 +144,7 @@ class ZipGeoPackagePlugin(SourcePlugin):
             return ExtractResult(
                 success=True,
                 rows_count=rows_count,
-                message=f"Läste {rows_count} rader från {gpkg_path.name}",
+                message=f"Läste {rows_count} rader från {shp_path.name}",
             )
 
         except requests.RequestException as e:
@@ -152,6 +156,6 @@ class ZipGeoPackagePlugin(SourcePlugin):
             self._log(error_msg, on_log)
             return ExtractResult(success=False, message=error_msg)
         except Exception as e:
-            error_msg = f"Fel vid läsning av GeoPackage: {e}"
+            error_msg = f"Fel vid läsning av Shapefile: {e}"
             self._log(error_msg, on_log)
             return ExtractResult(success=False, message=error_msg)

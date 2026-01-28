@@ -20,6 +20,7 @@ class GeoPackagePlugin(SourcePlugin):
         config: dict,
         conn: duckdb.DuckDBPyConnection,
         on_log: Callable[[str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
         """Läser GeoPackage-fil och laddar till raw-schema.
 
@@ -46,6 +47,7 @@ class GeoPackagePlugin(SourcePlugin):
             )
 
         self._log(f"Läser {path.name}...", on_log)
+        self._progress(0.1, f"Läser {path.name}...", on_progress)
 
         try:
             # Bygg ST_Read med layer om specificerat
@@ -59,10 +61,13 @@ class GeoPackagePlugin(SourcePlugin):
                 SELECT * FROM {read_expr}
             """)
 
+            self._progress(0.9, "Räknar rader...", on_progress)
+
             result = conn.execute(f"SELECT COUNT(*) FROM raw.{table_name}").fetchone()
             rows_count = result[0] if result else 0
 
             self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
+            self._progress(1.0, f"Läste {rows_count} rader", on_progress)
 
             return ExtractResult(
                 success=True,

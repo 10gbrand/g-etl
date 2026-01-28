@@ -6,7 +6,6 @@ includes:
   pipeline: ./taskfiles/pipeline.yml
   py: ./taskfiles/python.yml
   admin: ./taskfiles/admin.yml
-  web: ./taskfiles/web.yml
 
 tasks:
   default:
@@ -35,4 +34,4 @@ tasks:
   hq:
     desc:
     cmds:
-      - harlequin data/warehouse.duckdb
+      - uv run harlequin data/warehouse.duckdb

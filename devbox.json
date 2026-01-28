@@ -4,8 +4,7 @@
     "go-task@latest",
     "tree@latest",
     "claude-code@latest",
-    "uv@latest",
-    "harlequin@latest"
+    "uv@latest"
   ],
   "shell": {
     "init_hook": [
