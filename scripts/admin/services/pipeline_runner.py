@@ -317,6 +317,59 @@ class PipelineRunner:
             failed=failed,
         )
 
+    def _normalize_geometry_column(
+        self,
+        table_name: str,
+        on_log: Callable[[str], None] | None = None,
+    ) -> None:
+        """Normalisera geometrikolumnens namn till 'geom'.
+
+        Söker efter geometrikolumner med namn: geometry, shape, geometri
+        och döper om dem till 'geom'.
+        """
+        conn = self._get_connection()
+
+        # Alternativa geometrikolumnnamn (i prioritetsordning)
+        alt_geom_names = ["geometry", "shape", "geometri"]
+
+        try:
+            # Kolla om 'geom' redan finns
+            result = conn.execute(f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'raw'
+                AND table_name = '{table_name}'
+                AND LOWER(column_name) = 'geom'
+            """).fetchone()
+
+            if result:
+                # 'geom' finns redan, inget att göra
+                return
+
+            # Sök efter alternativa geometrikolumnnamn
+            for alt_name in alt_geom_names:
+                result = conn.execute(f"""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'raw'
+                    AND table_name = '{table_name}'
+                    AND LOWER(column_name) = '{alt_name}'
+                """).fetchone()
+
+                if result:
+                    actual_col_name = result[0]
+                    if on_log:
+                        on_log(f"  Döper om '{actual_col_name}' till 'geom' i raw.{table_name}")
+                    conn.execute(f"""
+                        ALTER TABLE raw.{table_name}
+                        RENAME COLUMN "{actual_col_name}" TO geom
+                    """)
+                    return
+
+        except Exception as e:
+            if on_log:
+                on_log(f"  Varning: Kunde inte normalisera geometrikolumn i {table_name}: {e}")
+
     async def load_parquet_to_db(
         self,
         parquet_files: list[tuple[str, str]],
@@ -358,6 +411,9 @@ class PipelineRunner:
 
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, do_load)
+
+                # Normalisera geometrikolumnens namn till 'geom'
+                self._normalize_geometry_column(dataset_id, on_log)
 
             except Exception as e:
                 if on_log:

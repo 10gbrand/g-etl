@@ -3,8 +3,8 @@
 -- Källa: skogsstyrelsen
 --
 -- Staging-kolumner som läggs till:
+--   geom             - Standardiserat geometrikolumnnamn (validerad)
 --   _imported_at     - Tidsstämpel för import
---   _geometry        - Validerad geometri
 --   _geom_md5        - MD5-hash av geometrin (WKT)
 --   _attr_md5        - MD5-hash av alla attribut (JSON)
 --   _source_id_md5   - MD5-hash av ID-fält från källan
@@ -12,6 +12,9 @@
 --   _centroid_lng    - Centroid longitud (WGS84)
 --   _h3_index        - H3-cell (beräknas i Python)
 --   _a5_index        - A5-cell (beräknas i Python när tillgängligt)
+--
+-- OBS: Geometrikolumnen normaliseras till 'geom' av pipeline_runner
+--      innan denna SQL körs. Alternativa namn hanteras automatiskt.
 
 CREATE OR REPLACE TABLE staging.naturvardsavtal_sks AS
 WITH source_data AS (
@@ -19,26 +22,28 @@ WITH source_data AS (
     WHERE geom IS NOT NULL
 )
 SELECT
-    -- Alla originalkolumner
-    s.*,
+    -- Alla originalkolumner EXKLUSIVE geometrivarianter
+    -- (geometry, shape, geometri kan finnas kvar som tomma efter rename)
+    s.* EXCLUDE (geom),
 
-    -- === STAGING METADATA ===
-    
-    -- Importdatum
-    CURRENT_TIMESTAMP AS _imported_at,
-    
-    -- Validerad geometri
+    -- === STANDARDISERAD GEOMETRI ===
+    -- Validerad och rensad geometri med standardnamn
     CASE
         WHEN s.geom IS NULL THEN NULL
         WHEN ST_IsValid(s.geom) THEN s.geom
         ELSE ST_MakeValid(s.geom)
-    END AS _geometry,
-    
+    END AS geom,
+
+    -- === STAGING METADATA ===
+
+    -- Importdatum
+    CURRENT_TIMESTAMP AS _imported_at,
+
     -- MD5-hash av geometri
     MD5(ST_AsText(s.geom)) AS _geom_md5,
-    
+
     -- MD5-hash av alla attribut (exklusive geometri)
-    MD5(to_json(s)::VARCHAR) AS _attr_md5,
+    MD5(to_json(s.* EXCLUDE (geom))::VARCHAR) AS _attr_md5,
     
     -- MD5-hash av ID-fält (försöker hitta vanliga ID-kolumner)
     MD5(COALESCE(

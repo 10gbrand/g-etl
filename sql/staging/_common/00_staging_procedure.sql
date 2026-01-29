@@ -3,6 +3,10 @@
 --
 -- Varje dataset kör sitt eget staging-skript som anropar detta makro
 -- H3-index och A5-index beräknas i Python-steget efteråt
+--
+-- VIKTIGT: Geometrikolumner normaliseras till 'geom' av pipeline_runner
+-- innan staging SQL körs. Alternativa namn (geometry, shape, geometri)
+-- döps om automatiskt.
 
 -- Makro för att hitta geometrikolumn (returnerar första som matchar)
 CREATE OR REPLACE MACRO find_geom_column(tbl) AS (
