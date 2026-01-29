@@ -163,7 +163,7 @@ class PipelineRunner:
         Args:
             dataset_ids: Lista med dataset-ID:n att köra transformationer för.
                          Om None körs alla. Mappar som börjar med _ (t.ex. _common)
-                         körs alltid.
+                         eller zzz_ (t.ex. zzz_end) körs alltid.
             folders: Lista med mappar att köra (t.ex. ["staging"] eller ["mart"]).
                      Om None körs både staging och mart.
             on_log: Callback för loggmeddelanden.
@@ -188,9 +188,11 @@ class PipelineRunner:
                 # Hoppa över om:
                 # - dataset_ids är specificerat OCH
                 # - mappen inte börjar med _ (t.ex. _common) OCH
+                # - mappen inte börjar med zzz_ (t.ex. zzz_end) OCH
                 # - mappen inte matchar något dataset-ID
                 if dataset_ids is not None:
-                    if not subfolder.startswith("_") and subfolder not in dataset_ids:
+                    is_special_folder = subfolder.startswith("_") or subfolder.startswith("zzz_")
+                    if not is_special_folder and subfolder not in dataset_ids:
                         continue
 
                 # Visa relativ sökväg från sql-mappen
@@ -213,6 +215,97 @@ class PipelineRunner:
                     success = False
 
         return success
+
+    async def populate_h3_cells(
+        self,
+        on_log: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Populera mart.h3_cells dynamiskt från alla tabeller i staging_2.
+
+        Hämtar alla tabeller i staging_2-schemat och skapar INSERT-satser
+        för att extrahera H3-celler till mart.h3_cells.
+
+        Args:
+            on_log: Callback för loggmeddelanden.
+
+        Returns:
+            True om populering lyckades.
+        """
+        conn = self._get_connection()
+
+        try:
+            # Hämta alla tabeller i staging_2
+            tables_result = conn.execute("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'staging_2'
+                ORDER BY table_name
+            """).fetchall()
+
+            tables = [row[0] for row in tables_result]
+
+            if not tables:
+                if on_log:
+                    on_log("Inga tabeller i staging_2 att processa")
+                return True
+
+            if on_log:
+                on_log(f"Populerar mart.h3_cells från {len(tables)} staging_2-tabeller...")
+
+            # Bygg och kör INSERT för varje tabell
+            for table_name in tables:
+                # Kolla att tabellen har nödvändiga kolumner
+                cols_result = conn.execute(f"""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'staging_2'
+                    AND table_name = '{table_name}'
+                """).fetchall()
+                cols = [row[0] for row in cols_result]
+
+                # Hoppa över om nödvändiga kolumner saknas
+                if 'h3_cells' not in cols:
+                    if on_log:
+                        on_log(f"  Hoppar {table_name} (saknar h3_cells)")
+                    continue
+
+                # Bygg INSERT-sats
+                insert_sql = f"""
+                    INSERT INTO mart.h3_cells (h3_cell, dataset, leverantor, klass, classification)
+                    SELECT
+                        unnest(from_json(h3_cells, '["VARCHAR"]')) AS h3_cell,
+                        '{table_name}' AS dataset,
+                        {'leverantor' if 'leverantor' in cols else "NULL"} AS leverantor,
+                        {'klass' if 'klass' in cols else "NULL"} AS klass,
+                        COALESCE(NULLIF({'grupp' if 'grupp' in cols else "'-'"}, ''), '-')
+                        || '.'
+                        || COALESCE(NULLIF({'typ' if 'typ' in cols else "'-'"}, ''), '-') AS classification
+                    FROM staging_2.{table_name}
+                    WHERE h3_cells IS NOT NULL AND h3_cells != '[]'
+                """
+
+                def do_insert(sql=insert_sql):
+                    conn.execute(sql)
+
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, do_insert)
+
+                if on_log:
+                    on_log(f"  Lade till h3_cells från {table_name}")
+
+            # Räkna antal rader i resultat
+            count_result = conn.execute("SELECT COUNT(*) FROM mart.h3_cells").fetchone()
+            total_rows = count_result[0] if count_result else 0
+
+            if on_log:
+                on_log(f"mart.h3_cells skapad med {total_rows} rader")
+
+            return True
+
+        except Exception as e:
+            if on_log:
+                on_log(f"Fel vid populering av mart.h3_cells: {e}")
+            return False
 
     async def run_parallel_extract(
         self,

@@ -16,3 +16,7 @@ LOAD httpfs;
 -- JSON - API-responshantering
 INSTALL json;
 LOAD json;
+
+-- H3 - Spatial indexering (community extension)
+INSTALL h3 FROM community;
+LOAD h3;

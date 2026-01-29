@@ -24,23 +24,30 @@ class Settings:
     DB_KEEP_COUNT: int = 3  # Antal databaser att behålla vid cleanup
 
     # === H3 Spatial Index ===
-    # Resolution 7 ≈ 5.16 km² per cell (genomsnittlig hexagon-area)
     # Se: https://h3geo.org/docs/core-library/restable/
-    H3_RESOLUTION: int = 7
+    # Resolution 13 ≈ 43.9 m² per cell (för centroid-index)
+    # Resolution 11 ≈ 2149 m² per cell (för polyfill, större celler inom polygoner)
+    H3_RESOLUTION: int = 13  # För _h3_index (centroid)
+    H3_POLYFILL_RESOLUTION: int = 11  # För _h3_cells (polyfill)
 
     # === Pipeline ===
     MAX_CONCURRENT_EXTRACTS: int = 4  # Max parallella nedladdningar
     EXTRACT_TIMEOUT_SECONDS: int = 300  # Timeout per dataset
 
     # === Koordinatsystem ===
+    # OBS: DuckDB:s spatial extension har bugg med EPSG-koder, använd PROJ4-strängar!
     SOURCE_CRS: str = "EPSG:3006"  # SWEREF99 TM (vanligt för svenska data)
     TARGET_CRS: str = "EPSG:4326"  # WGS84 (för H3/A5)
 
+    # PROJ4-strängar för korrekt transformation i DuckDB
+    PROJ4_SWEREF99_TM: str = "+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+    PROJ4_WGS84: str = "+proj=longlat +datum=WGS84 +no_defs"
+
     # === DuckDB Extensions ===
-    DUCKDB_EXTENSIONS: list[str] = ["spatial", "parquet", "httpfs", "json"]
+    DUCKDB_EXTENSIONS: list[str] = ["spatial", "parquet", "httpfs", "json", "h3"]
 
     # === DuckDB Scheman ===
-    DUCKDB_SCHEMAS: list[str] = ["raw", "staging", "mart"]
+    DUCKDB_SCHEMAS: list[str] = ["raw", "staging", "staging_2", "mart"]
 
     @property
     def datasets_path(self) -> Path:

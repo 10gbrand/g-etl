@@ -30,3 +30,23 @@ tasks:
     desc: Lista tillgängliga dataset-typer
     cmds:
       - uv run python -m scripts.pipeline --list-types
+
+  export:kepler:
+    desc: Exportera H3-data till CSV för Kepler.gl
+    cmds:
+      - uv run python scripts/export_h3.py --format csv
+
+  export:geojson:
+    desc: Exportera H3-data till GeoJSON
+    cmds:
+      - uv run python scripts/export_h3.py --format geojson --limit 10000
+
+  export:html:
+    desc: Exportera H3-data till interaktiv HTML-karta
+    cmds:
+      - uv run python scripts/export_h3.py --format html --limit 5000
+
+  export:parquet:
+    desc: Exportera H3-data till GeoParquet
+    cmds:
+      - uv run python scripts/export_h3.py --format parquet

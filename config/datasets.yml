@@ -167,7 +167,8 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksUtfordAvverkning_gpkg.zip
-    enabled: true
+    enabled: false
+    status: källan finns ej
 
   - id: skog_med_hoga_naturvarden
     name: Skog_med_hoga_naturvarden
@@ -175,7 +176,8 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogMedHogaNaturvarden_gpkg.zip
-    enabled: true
+    enabled: false
+    status: källan finns ej
 
   - id: frotaktsomraden
     name: Frotaktsomraden
@@ -183,7 +185,8 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksFrotaktsomraden_gpkg.zip
-    enabled: true
+    enabled: false
+    status: källan finns ej
 
   - id: skogshistorisk_karta
     name: Skogshistorisk_karta
@@ -191,7 +194,8 @@ datasets:
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogshistoriskKarta_gpkg.zip
-    enabled: true
+    enabled: false
+    status: källan finns ej
 
   # === NYA DATASET: Naturvårdsverket ===
 
@@ -233,7 +237,7 @@ datasets:
     typ: naturvardsverket_shp
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/Skog/analys_nationellt.zip
-    enabled: true
+    enabled: false
 
   # === NYA DATASET: Övriga ===
 
@@ -243,4 +247,16 @@ datasets:
     typ: naturvardsverket_shp
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/diken/Dikningsforetagskartan.zip
-    enabled: true
+    enabled: false
+    status: källan finns ej
+
+  # === LOKALA DATASET ===
+
+  - id: giss_gavd
+    name: GISS GAVD
+    description: GAVD-lager från GISS GeoPackage
+    typ: lokal_gpkg
+    plugin: zip_geopackage
+    url: /Volumes/T9/spring/GISS.gpkg.zip
+    layer: GAVD
+    enabled: false

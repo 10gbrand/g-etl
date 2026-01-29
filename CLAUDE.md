@@ -15,6 +15,15 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 - `task pipeline:extract` - Kör bara extract (hämta data)
 - `task pipeline:transform` - Kör bara SQL-transformationer
 - `task pipeline:dataset -- <id>` - Kör specifikt dataset
+- `task pipeline:type -- <typ>` - Kör datasets av viss typ
+- `task pipeline:types` - Lista tillgängliga dataset-typer
+
+**Export:**
+
+- `task pipeline:export:kepler` - Exportera H3-data till CSV för Kepler.gl
+- `task pipeline:export:geojson` - Exportera H3-data till GeoJSON
+- `task pipeline:export:html` - Exportera H3-data till interaktiv HTML-karta
+- `task pipeline:export:parquet` - Exportera H3-data till GeoParquet
 
 **Python:**
 - `task py:install` - Installera dependencies med UV
@@ -42,31 +51,35 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 Admin TUI (Textual) → Pipeline Runner → Plugins → DuckDB
                                               ↓
                                        SQL-transformationer
-                                       (staging/ → mart/)
+                                       (staging/ → staging_2/ → mart/)
 ```
 
 **Dataflöde genom DuckDB-scheman:**
 - `raw/` - Rå ingesterad data från plugins
-- `staging/` - Mellanliggande transformationer (SQL)
-- `mart/` - Färdiga dataset (SQL)
+- `staging/` - Validering, metadata och H3-indexering (SQL)
+- `staging_2/` - Normaliserade dataset med enhetlig struktur (SQL)
+- `mart/` - Aggregerade tabeller (SQL)
 
 **Nyckelkomponenter:**
 
-- `plugins/` - Datakälla-plugins (wfs, lantmateriet, geopackage, geoparquet, zip_geopackage)
+- `plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)
 - `sql/_init/` - Databas-initiering (extensions, scheman, makron)
-- `sql/staging/` - SQL för rensning och standardisering
-- `sql/mart/` - SQL för färdiga dataset
+- `sql/staging/` - SQL för validering, metadata och H3-indexering
+- `sql/staging_2/` - SQL för normalisering till enhetlig struktur
+- `sql/mart/` - SQL för aggregering (zzz_end/01_end.sql skapar mart.h3_cells)
 - `scripts/pipeline.py` - Pipeline-runner (CLI)
+- `scripts/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet)
 - `scripts/db.py` - Gemensamma databasverktyg
 - `scripts/admin/app.py` - Textual TUI-applikation
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
+- `config/settings.py` - Centrala inställningar (H3-resolution, CRS, etc.)
 
 **DuckDB-initiering (sql/_init/):**
 
 Körs automatiskt vid varje databasanslutning i alfabetisk ordning:
 
-- `01_extensions.sql` - Installerar och laddar extensions (spatial, parquet, httpfs, json)
-- `02_schemas.sql` - Skapar scheman (raw, staging, mart)
+- `01_extensions.sql` - Installerar och laddar extensions (spatial, parquet, httpfs, json, h3)
+- `02_schemas.sql` - Skapar scheman (raw, staging, staging_2, mart)
 - `03_macros.sql` - Definierar återanvändbara makron (validate_and_fix_geometry, etc.)
 
 ## Plugins

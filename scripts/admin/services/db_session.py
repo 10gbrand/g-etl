@@ -33,6 +33,56 @@ def get_latest_db_path() -> Path | None:
     return db_files[0] if db_files else None
 
 
+def get_current_db_path() -> Path:
+    """Hämta sökväg till den fasta databasfilen (warehouse.duckdb).
+
+    Denna fil pekar alltid på senaste körningen.
+    """
+    return settings.DATA_DIR / f"{settings.DB_PREFIX}{settings.DB_EXTENSION}"
+
+
+def update_current_db(source_path: Path | None = None) -> Path | None:
+    """Uppdatera den fasta databasfilen med senaste körningen.
+
+    Kopierar den senaste tidsstämplade databasen till warehouse.duckdb.
+
+    Args:
+        source_path: Sökväg till källdatabasen. Om None används senaste.
+
+    Returns:
+        Sökväg till den uppdaterade fasta databasen, eller None om ingen källa finns.
+    """
+    import shutil
+
+    if source_path is None:
+        source_path = get_latest_db_path()
+
+    if source_path is None or not source_path.exists():
+        return None
+
+    current_db = get_current_db_path()
+
+    # Ta bort befintlig fil och relaterade filer (WAL etc)
+    if current_db.exists():
+        try:
+            current_db.unlink()
+        except OSError:
+            pass
+
+    for related in settings.DATA_DIR.glob(f"{settings.DB_PREFIX}{settings.DB_EXTENSION}*"):
+        try:
+            related.unlink()
+        except OSError:
+            pass
+
+    # Kopiera den nya databasen
+    try:
+        shutil.copy2(source_path, current_db)
+        return current_db
+    except OSError:
+        return None
+
+
 def cleanup_old_databases(keep_count: int | None = None) -> list[Path]:
     """Ta bort gamla databasfiler, behåll de senaste.
 
@@ -70,18 +120,8 @@ def cleanup_old_databases(keep_count: int | None = None) -> list[Path]:
         except OSError:
             pass  # Filen kan vara låst
 
-    # Ta även bort den gamla warehouse.duckdb om den finns
-    old_db = settings.DATA_DIR / f"{settings.DB_PREFIX}{settings.DB_EXTENSION}"
-    if old_db.exists():
-        try:
-            old_db.unlink()
-            removed.append(old_db)
-            # Relaterade filer
-            for related in settings.DATA_DIR.glob(f"{settings.DB_PREFIX}{settings.DB_EXTENSION}*"):
-                related.unlink()
-                removed.append(related)
-        except OSError:
-            pass
+    # OBS: Vi behåller warehouse.duckdb (den fasta "current" databasen)
+    # Den uppdateras av update_current_db() efter varje körning
 
     return removed
 

@@ -7,10 +7,9 @@ Plugins för att hämta data från olika källor till DuckDB:s `raw`-schema.
 | Plugin | Beskrivning |
 |--------|-------------|
 | `wfs` | Hämtar geodata från WFS-tjänster |
-| `geopackage` | Läser lokala GeoPackage-filer |
 | `geoparquet` | Läser GeoParquet-filer (lokalt eller URL) |
-| `zip_geopackage` | Laddar ner och extraherar zippade GeoPackage-filer |
-| `zip_shapefile` | Laddar ner och extraherar zippade Shapefile-filer |
+| `zip_geopackage` | Läser zippade GeoPackage-filer (URL eller lokal fil) |
+| `zip_shapefile` | Läser zippade Shapefile-filer (URL eller lokal fil) |
 | `lantmateriet` | Hämtar data från Lantmäteriets API |
 | `mssql` | Hämtar data från Microsoft SQL Server |
 
@@ -40,31 +39,6 @@ Hämtar geodata från OGC WFS-tjänster (Web Feature Service).
   layer: sksAvverkAnm
   srs: EPSG:3006
   max_features: 10000
-  enabled: true
-```
-
----
-
-## geopackage
-
-Läser lokala GeoPackage-filer (.gpkg).
-
-### Parametrar
-
-| Parameter | Obligatorisk | Default | Beskrivning |
-|-----------|--------------|---------|-------------|
-| `id` | Ja | - | Tabellnamn i DuckDB |
-| `path` | Ja | - | Sökväg till .gpkg-filen |
-| `layer` | Nej | Första lagret | Specifikt lager att läsa |
-
-### Exempel
-
-```yaml
-- id: fastigheter
-  name: Fastigheter
-  plugin: geopackage
-  path: /data/fastigheter.gpkg
-  layer: fastighetsytor
   enabled: true
 ```
 
@@ -110,25 +84,34 @@ Läser GeoParquet-filer från lokal disk eller URL (inklusive S3).
 
 ## zip_geopackage
 
-Laddar ner zippade GeoPackage-filer från URL, extraherar och läser in.
+Läser zippade GeoPackage-filer från URL eller lokal disk, extraherar och läser in.
 
 ### Parametrar
 
 | Parameter | Obligatorisk | Default | Beskrivning |
 |-----------|--------------|---------|-------------|
 | `id` | Ja | - | Tabellnamn i DuckDB |
-| `url` | Ja | - | URL till zip-filen |
+| `url` | Ja | - | URL eller lokal sökväg till zip-filen |
 | `layer` | Nej | Första lagret | Specifikt lager att läsa |
 | `gpkg_filename` | Nej | Hittas automatiskt | Filnamn på .gpkg i arkivet |
 
 ### Exempel
 
 ```yaml
+# Från URL
 - id: naturreservat
   name: Naturreservat
   plugin: zip_geopackage
   url: https://geodata.naturvardsverket.se/nedladdning/naturreservat.zip
   layer: naturreservat_polygon
+  enabled: true
+
+# Från lokal fil
+- id: giss_data
+  name: GISS Data
+  plugin: zip_geopackage
+  url: /Volumes/T9/spring/giss.geopackage.zip
+  gpkg_filename: giss.gpkg
   enabled: true
 ```
 

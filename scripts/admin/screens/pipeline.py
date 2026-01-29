@@ -9,6 +9,7 @@ from textual.containers import Container, Horizontal, ScrollableContainer, Verti
 from textual.screen import Screen
 from textual.widgets import (
     Button,
+    Checkbox,
     Footer,
     Header,
     Label,
@@ -187,6 +188,28 @@ class PipelineScreen(Screen):
         width: 40;
     }
 
+    #filter-bar Checkbox {
+        margin-left: 2;
+    }
+
+    #phase-bar {
+        height: auto;
+        padding: 0 1;
+        background: $surface-darken-1;
+    }
+
+    #phase-bar Horizontal {
+        height: auto;
+    }
+
+    #phase-bar Label {
+        padding: 0 1;
+    }
+
+    #phase-bar Checkbox {
+        margin-left: 1;
+    }
+
     #datasets-panel {
         height: 100%;
         border: solid $primary;
@@ -261,6 +284,15 @@ class PipelineScreen(Screen):
                 ]
                 yield Select(types, id="type-filter", value=None)
                 yield Label(f"({len(self.config.get_enabled())} aktiva datasets)")
+                yield Checkbox("Endast saknade", id="skip-existing", value=False)
+
+        with Container(id="phase-bar"):
+            with Horizontal():
+                yield Label("Faser:")
+                yield Checkbox("1. Extract", id="phase-extract", value=True)
+                yield Checkbox("2. Staging", id="phase-staging", value=True)
+                yield Checkbox("3. Staging_2", id="phase-staging2", value=True)
+                yield Checkbox("4. Mart", id="phase-mart", value=True)
 
         with Horizontal(id="main-content"):
             with Container(id="datasets-panel"):
@@ -327,6 +359,18 @@ class PipelineScreen(Screen):
             return self.config.get_by_type(self.current_type_filter)
         return self.config.get_enabled()
 
+    def get_existing_parquet_ids(self) -> set[str]:
+        """Hämta ID:n för datasets som har befintliga parquet-filer i data/raw/."""
+        from pathlib import Path
+        raw_dir = Path("data/raw")
+        existing_ids = set()
+        if raw_dir.exists():
+            for parquet_file in raw_dir.glob("*.parquet"):
+                # Filnamnet är dataset-ID
+                dataset_id = parquet_file.stem
+                existing_ids.add(dataset_id)
+        return existing_ids
+
     def log_message(self, message: str) -> None:
         """Lägg till meddelande i loggen (UI + fil)."""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -352,12 +396,36 @@ class PipelineScreen(Screen):
         self.query_one("#btn-all", Button).disabled = running
         self.query_one("#btn-stop", Button).disabled = not running
 
+    def get_selected_phases(self) -> tuple[bool, bool, bool, bool]:
+        """Hämta vilka faser som är valda."""
+        extract = self.query_one("#phase-extract", Checkbox).value
+        staging = self.query_one("#phase-staging", Checkbox).value
+        staging2 = self.query_one("#phase-staging2", Checkbox).value
+        mart = self.query_one("#phase-mart", Checkbox).value
+        return extract, staging, staging2, mart
+
     @work(exclusive=True)
     async def run_datasets(self, datasets: list[Dataset]) -> None:
         """Kör valda datasets med parallell extraktion och Docker-stil progress."""
         if not datasets:
             self.log_message("Inga datasets att köra")
             return
+
+        # Hämta valda faser
+        run_extract, run_staging, run_staging2, run_mart = self.get_selected_phases()
+        if not any([run_extract, run_staging, run_staging2, run_mart]):
+            self.log_message("Ingen fas vald - välj minst en fas att köra")
+            return
+
+        phases_str = ", ".join(
+            name for name, enabled in [
+                ("Extract", run_extract),
+                ("Staging", run_staging),
+                ("Staging_2", run_staging2),
+                ("Mart", run_mart)
+            ] if enabled
+        )
+        self.log_message(f"Kör faser: {phases_str}")
 
         # Starta filloggning
         self._file_logger = FileLogger(prefix="tui_pipeline")
@@ -368,17 +436,12 @@ class PipelineScreen(Screen):
         progress = self.query_one(MultiProgressWidget)
         progress.reset()
 
-        # Reset statuses och lägg till i progress
-        for i, dataset in enumerate(datasets):
-            self.update_dataset_status(dataset.id, DatasetStatus.PENDING)
-            progress.add_task(
-                TaskProgress(
-                    id=dataset.id,
-                    name=dataset.name,
-                    status=TaskStatus.QUEUED,
-                    queue_position=i + 1,
-                )
-            )
+        # Kolla om vi ska hoppa över befintliga parquet-filer
+        skip_existing = self.query_one("#skip-existing", Checkbox).value
+        existing_ids = self.get_existing_parquet_ids() if skip_existing else set()
+
+        from pathlib import Path
+        from scripts.admin.services.pipeline_runner import ParallelExtractResult
 
         # Skapa runner
         if self.mock_mode:
@@ -386,113 +449,193 @@ class PipelineScreen(Screen):
         else:
             self.runner = PipelineRunner(db_path=self.db_path)
 
-        # === FAS 1: Parallell extraktion till GeoParquet ===
-        progress.set_phase("Extract (parallell)")
-        self.log_message(f"Startar parallell extraktion av {len(datasets)} dataset(s)...")
+        # Lista med dataset-IDs som ska processas i staging/mart
+        loaded_ids = [ds.id for ds in datasets]
+        all_parquet_files = []
 
-        # Callback för progress-events under extraktion
-        def on_extract_event(event) -> None:
-            ds_id = event.dataset
-            if event.event_type == "dataset_started":
-                self.update_dataset_status(ds_id, DatasetStatus.RUNNING)
-                progress.update_task(
-                    ds_id,
-                    status=TaskStatus.RUNNING,
-                    progress=0.0,
-                    message="Startar...",
+        # === FAS 1: EXTRACT (Plugins) ===
+        if run_extract:
+            # Filtrera datasets för extraktion (hoppa över befintliga om checkboxen är aktiv)
+            datasets_to_extract = [
+                ds for ds in datasets if ds.id not in existing_ids
+            ]
+            skipped_datasets = [ds for ds in datasets if ds.id in existing_ids]
+
+            if skip_existing and skipped_datasets:
+                self.log_message(
+                    f"Hoppar över {len(skipped_datasets)} dataset med befintliga parquet-filer: "
+                    f"{', '.join(ds.id for ds in skipped_datasets)}"
                 )
-            elif event.event_type == "progress":
-                progress.update_task(
-                    ds_id,
-                    progress=event.progress or 0.0,
-                    message=event.message,
+
+            # Reset statuses och lägg till i progress (alla datasets)
+            for i, dataset in enumerate(datasets):
+                self.update_dataset_status(dataset.id, DatasetStatus.PENDING)
+                # Markera skippade som "completed" direkt
+                if dataset.id in existing_ids:
+                    progress.add_task(
+                        TaskProgress(
+                            id=dataset.id,
+                            name=dataset.name,
+                            status=TaskStatus.COMPLETED,
+                            message="Befintlig parquet",
+                        )
+                    )
+                else:
+                    progress.add_task(
+                        TaskProgress(
+                            id=dataset.id,
+                            name=dataset.name,
+                            status=TaskStatus.QUEUED,
+                            queue_position=i + 1,
+                        )
+                    )
+
+            progress.set_phase("1. Extract (parallell)")
+            if datasets_to_extract:
+                self.log_message(f"Startar parallell extraktion av {len(datasets_to_extract)} dataset(s)...")
+            else:
+                self.log_message("Alla valda datasets har befintliga parquet-filer, hoppar extraktion")
+
+            # Callback för progress-events under extraktion
+            def on_extract_event(event) -> None:
+                ds_id = event.dataset
+                if event.event_type == "dataset_started":
+                    self.update_dataset_status(ds_id, DatasetStatus.RUNNING)
+                    progress.update_task(
+                        ds_id,
+                        status=TaskStatus.RUNNING,
+                        progress=0.0,
+                        message="Startar...",
+                    )
+                elif event.event_type == "progress":
+                    progress.update_task(
+                        ds_id,
+                        progress=event.progress or 0.0,
+                        message=event.message,
+                    )
+                elif event.event_type == "dataset_completed":
+                    self.update_dataset_status(ds_id, DatasetStatus.COMPLETED)
+                    progress.update_task(
+                        ds_id,
+                        status=TaskStatus.COMPLETED,
+                        progress=1.0,
+                        rows_count=event.rows_count,
+                    )
+                    self.log_message(f"Klar: {ds_id} ({event.rows_count} rader)")
+                elif event.event_type == "dataset_failed":
+                    self.update_dataset_status(ds_id, DatasetStatus.FAILED)
+                    progress.update_task(
+                        ds_id,
+                        status=TaskStatus.FAILED,
+                        error=event.message,
+                    )
+                    self.log_message(f"Fel: {ds_id} - {event.message}")
+
+            # Kör parallell extraktion (endast för datasets som ska extraheras)
+            if datasets_to_extract:
+                extract_result = await self.runner.run_parallel_extract(
+                    dataset_configs=[ds.config for ds in datasets_to_extract],
+                    output_dir="data/raw",
+                    max_concurrent=4,
+                    on_event=on_extract_event,
+                    on_log=lambda msg: self.log_message(msg),
                 )
-            elif event.event_type == "dataset_completed":
-                self.update_dataset_status(ds_id, DatasetStatus.COMPLETED)
-                progress.update_task(
-                    ds_id,
-                    status=TaskStatus.COMPLETED,
-                    progress=1.0,
-                    rows_count=event.rows_count,
+            else:
+                extract_result = ParallelExtractResult(success=True, parquet_files=[], failed=[])
+
+            if not self._running:
+                self.log_message("Avbrutet av användare")
+                self.set_running_state(False)
+                return
+
+            # Lägg till befintliga parquet-filer för skippade datasets
+            skipped_parquet_files = [
+                (ds.id, str(Path("data/raw") / f"{ds.id}.parquet"))
+                for ds in skipped_datasets
+            ]
+
+            # Kombinera extraherade och skippade filer
+            all_parquet_files = extract_result.parquet_files + skipped_parquet_files
+
+            # Rapportera resultat
+            if datasets_to_extract:
+                self.log_message(
+                    f"Extraktion klar: {len(extract_result.parquet_files)} lyckade, "
+                    f"{len(extract_result.failed)} misslyckade"
                 )
-                self.log_message(f"Klar: {ds_id} ({event.rows_count} rader)")
-            elif event.event_type == "dataset_failed":
-                self.update_dataset_status(ds_id, DatasetStatus.FAILED)
-                progress.update_task(
-                    ds_id,
-                    status=TaskStatus.FAILED,
-                    error=event.message,
+            if skipped_datasets:
+                self.log_message(f"Använder {len(skipped_parquet_files)} befintliga parquet-filer")
+
+            # Ladda parquet till DuckDB
+            if all_parquet_files:
+                progress.set_phase("Load → raw")
+                self.log_message(f"Laddar {len(all_parquet_files)} parquet-filer till databas...")
+
+                await self.runner.load_parquet_to_db(
+                    parquet_files=all_parquet_files,
+                    on_log=lambda msg: self.log_message(msg),
                 )
-                self.log_message(f"Fel: {ds_id} - {event.message}")
 
-        # Kör parallell extraktion
-        extract_result = await self.runner.run_parallel_extract(
-            dataset_configs=[ds.config for ds in datasets],
-            output_dir="data/raw",
-            max_concurrent=4,
-            on_event=on_extract_event,
-            on_log=lambda msg: self.log_message(msg),
-        )
+                loaded_ids = [ds_id for ds_id, _ in all_parquet_files]
+        else:
+            self.log_message("Hoppar över Extract-fasen")
 
-        if not self._running:
-            self.log_message("Avbrutet av användare")
-            self.set_running_state(False)
-            return
-
-        # Rapportera resultat
-        self.log_message(
-            f"Extraktion klar: {len(extract_result.parquet_files)} lyckade, "
-            f"{len(extract_result.failed)} misslyckade"
-        )
-
-        # === FAS 2: Ladda parquet till DuckDB ===
-        extracted_ids = []
-        if extract_result.parquet_files:
-            progress.set_phase("Load")
-            self.log_message("Laddar parquet-filer till databas...")
-
-            await self.runner.load_parquet_to_db(
-                parquet_files=extract_result.parquet_files,
-                on_log=lambda msg: self.log_message(msg),
-            )
-
-            # Spara ID:n för lyckade extraktioner
-            extracted_ids = [ds_id for ds_id, _ in extract_result.parquet_files]
-
-        # === FAS 3: Staging SQL-transformationer ===
-        if self._running and extracted_ids:
-            progress.set_phase("Staging SQL")
-            self.log_message("Kör staging SQL (validering, MD5, centroids)...")
-            progress.set_status("Skapar staging-tabeller...")
+        # === FAS 2: STAGING (SQL) ===
+        # H3-index beräknas direkt i SQL via DuckDB H3 extension
+        if run_staging and self._running and loaded_ids:
+            progress.set_phase("2. Staging SQL + H3")
+            self.log_message("Kör staging SQL (validering, MD5, centroids, H3)...")
+            progress.set_status("Skapar staging-tabeller med H3-index...")
 
             await self.runner.run_transforms(
-                dataset_ids=extracted_ids,
+                dataset_ids=loaded_ids,
                 folders=["staging"],
                 on_log=lambda msg: self.log_message(msg),
             )
+        elif not run_staging:
+            self.log_message("Hoppar över Staging-fasen")
 
-        # === FAS 4: H3-indexering (Python) ===
-        if self._running and extracted_ids:
-            progress.set_phase("H3 Index")
-            self.log_message("Beräknar H3-index...")
-            progress.set_status("Lägger till H3-celler i staging-tabeller...")
-
-            await self.runner.run_staging(
-                dataset_ids=extracted_ids,
-                on_log=lambda msg: self.log_message(msg),
-            )
-
-        # === FAS 5: Mart SQL-transformationer ===
-        if self._running:
-            progress.set_phase("Mart SQL")
-            self.log_message("Kör mart SQL-transformationer...")
-            progress.set_status("Skapar färdiga dataset...")
+        # === FAS 3: STAGING_2 (SQL) ===
+        # Normaliserade tabeller med enhetlig struktur
+        if run_staging2 and self._running and loaded_ids:
+            progress.set_phase("3. Staging_2 SQL")
+            self.log_message("Kör staging_2 SQL (normalisering)...")
+            progress.set_status("Skapar normaliserade tabeller...")
 
             await self.runner.run_transforms(
-                dataset_ids=extracted_ids,
+                dataset_ids=loaded_ids,
+                folders=["staging_2"],
+                on_log=lambda msg: self.log_message(msg),
+            )
+        elif not run_staging2:
+            self.log_message("Hoppar över Staging_2-fasen")
+
+        # === FAS 4: MART (SQL + dynamisk H3-aggregering) ===
+        if run_mart and self._running:
+            progress.set_phase("4. Mart SQL")
+            self.log_message("Kör mart SQL-transformationer...")
+            progress.set_status("Skapar aggregerade tabeller...")
+
+            # Kör mart SQL-filer (skapar tom mart.h3_cells)
+            await self.runner.run_transforms(
+                dataset_ids=loaded_ids,
                 folders=["mart"],
                 on_log=lambda msg: self.log_message(msg)
             )
+
+            # Populera mart.h3_cells dynamiskt från staging_2
+            self.log_message("Populerar mart.h3_cells från staging_2...")
+            await self.runner.populate_h3_cells(
+                on_log=lambda msg: self.log_message(msg)
+            )
+        elif not run_mart:
+            self.log_message("Hoppar över Mart-fasen")
+
+        # Uppdatera den fasta warehouse.duckdb med senaste körningen
+        from scripts.admin.services.db_session import update_current_db
+        current_db = update_current_db()
+        if current_db:
+            self.log_message(f"Uppdaterade {current_db.name}")
 
         self.log_message("Klart!")
         progress.set_status("")

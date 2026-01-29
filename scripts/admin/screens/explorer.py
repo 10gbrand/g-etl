@@ -17,6 +17,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from config.settings import settings
+from scripts.admin.services.db_session import get_current_db_path
 from scripts.admin.widgets.ascii_map import BrailleMapWidget
 
 
@@ -129,10 +130,12 @@ class ExplorerScreen(Screen):
         min-height: 10;
         border: solid $accent;
         padding: 0;
+        overflow: auto;
     }
 
     #data-table {
         height: 100%;
+        width: auto;
     }
 
     #footer-row {
@@ -149,9 +152,9 @@ class ExplorerScreen(Screen):
     }
     """
 
-    def __init__(self, db_path: str = "data/warehouse.duckdb") -> None:
+    def __init__(self, db_path: str | None = None) -> None:
         super().__init__()
-        self.db_path = db_path
+        self.db_path = db_path or str(get_current_db_path())
         self._conn: duckdb.DuckDBPyConnection | None = None
         self.tables: list[tuple[str, str]] = []  # (schema, table)
         self.current_table: tuple[str, str] | None = None
@@ -295,8 +298,7 @@ class ExplorerScreen(Screen):
             if not display_cols:
                 display_cols = [columns[0][0]] if columns else []
 
-            # Begränsa till max 8 kolumner för läsbarhet
-            display_cols = display_cols[:8]
+            # Visa alla kolumner (horisontell scrollning i UI)
             cols_str = ", ".join([f'"{c}"' for c in display_cols])
 
             sample_query = f"SELECT {cols_str} FROM {schema}.{table} LIMIT 10"

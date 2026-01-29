@@ -23,6 +23,7 @@ g-etl = "scripts.admin.app:main"
 [project.optional-dependencies]
 dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]
 build = ["pyinstaller>=6.0.0"]
+viz = ["folium>=0.17.0"]
 
 [dependency-groups]
 dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]

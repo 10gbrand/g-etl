@@ -1,7 +1,6 @@
 """G-ETL Source Plugins."""
 
 from plugins.base import SourcePlugin
-from plugins.geopackage import GeoPackagePlugin
 from plugins.geoparquet import GeoParquetPlugin
 from plugins.lantmateriet import LantmaterietPlugin
 from plugins.mssql import MssqlPlugin
@@ -12,7 +11,6 @@ from plugins.zip_shapefile import ZipShapefilePlugin
 PLUGINS: dict[str, type[SourcePlugin]] = {
     "wfs": WfsPlugin,
     "lantmateriet": LantmaterietPlugin,
-    "geopackage": GeoPackagePlugin,
     "geoparquet": GeoParquetPlugin,
     "zip_geopackage": ZipGeoPackagePlugin,
     "zip_shapefile": ZipShapefilePlugin,
