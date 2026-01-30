@@ -18,6 +18,7 @@ SQL-filformat:
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -208,7 +209,7 @@ class Migrator:
     def migrate(
         self,
         target_version: str | None = None,
-        on_log: callable | None = None,
+        on_log: Callable[[str], None] | None = None,
     ) -> MigrationResult:
         """Kör väntande migrationer (up).
 
@@ -276,7 +277,7 @@ class Migrator:
     def rollback(
         self,
         steps: int = 1,
-        on_log: callable | None = None,
+        on_log: Callable[[str], None] | None = None,
     ) -> MigrationResult:
         """Rulla tillbaka migrationer (down).
 
@@ -364,7 +365,7 @@ class Migrator:
     def create(
         self,
         name: str,
-        on_log: callable | None = None,
+        on_log: Callable[[str], None] | None = None,
     ) -> Path:
         """Skapa en ny tom migreringsfil.
 
