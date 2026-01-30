@@ -16,6 +16,10 @@
 #     - typ: Typ (valfritt, kan vara kolumnnamn)
 #     - leverantor: Dataleverantör (sks, nvv, sgu)
 #     - source_id_column: Kolumn för source_id (om tom, ingen source_id)
+# https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+# https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
+# https://wms.slu.se/silvaboreal/esf/ows
+# https://ext-dokument.lansstyrelsen.se/gemensamt/geodata/ShapeExport/LST_jaktadm_ajo_afo.zip
 
 datasets:
   # ============================================================================
@@ -47,8 +51,8 @@ datasets:
       source_id_column: objectid
     staging_2:
       klass: biotopskydd
-      grupp: Biotyp  # Kolumnreferens
-      typ: Naturtyp  # Kolumnreferens
+      grupp: Biotyp # Kolumnreferens
+      typ: Naturtyp # Kolumnreferens
       leverantor: sks
       source_id_column: beteckn
 
