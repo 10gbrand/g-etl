@@ -6,10 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
+import yaml
 
 from config.settings import settings
 from plugins import get_plugin
 from scripts.admin.services.staging_processor import process_all_to_staging
+from scripts.sql_generator import SQLGenerator
 
 
 @dataclass
@@ -564,6 +566,244 @@ class PipelineRunner:
             ))
 
         return fail_count == 0
+
+    def _load_datasets_config(self) -> dict[str, dict]:
+        """Ladda datasets.yml och returnera som dict keyed på dataset id."""
+        config_path = settings.CONFIG_DIR / "datasets.yml"
+        if not config_path.exists():
+            return {}
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        datasets = config.get("datasets", [])
+        return {ds["id"]: ds for ds in datasets if "id" in ds}
+
+    async def run_generated_staging(
+        self,
+        dataset_ids: list[str],
+        on_log: Callable[[str], None] | None = None,
+        on_event: Callable[[PipelineEvent], None] | None = None,
+    ) -> bool:
+        """Kör staging-transformationer med genererad SQL.
+
+        Använder SQLGenerator för att skapa staging-SQL baserat på
+        konfiguration i datasets.yml istället för att läsa SQL-filer.
+
+        Args:
+            dataset_ids: Lista med dataset-ID:n att processa
+            on_log: Callback för loggmeddelanden
+            on_event: Callback för progress-events
+
+        Returns:
+            True om alla processades framgångsrikt
+        """
+        if on_log:
+            on_log("=== Kör staging med genererad SQL ===")
+
+        conn = self._get_connection()
+        generator = SQLGenerator()
+        datasets_config = self._load_datasets_config()
+
+        success_count = 0
+        fail_count = 0
+
+        for i, dataset_id in enumerate(dataset_ids):
+            if on_log:
+                on_log(f"Processar staging.{dataset_id}...")
+
+            if on_event:
+                on_event(PipelineEvent(
+                    event_type="progress",
+                    message=f"Staging {dataset_id}...",
+                    dataset=dataset_id,
+                    progress=(i + 0.5) / len(dataset_ids),
+                ))
+
+            # Hämta staging-config från datasets.yml
+            ds_config = datasets_config.get(dataset_id, {})
+            staging_config = ds_config.get("staging", {})
+
+            try:
+                # Generera och kör staging SQL
+                sql = generator.staging_sql(dataset_id, staging_config)
+
+                def do_staging_sql(sql_to_run=sql):
+                    conn.execute(sql_to_run)
+
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, do_staging_sql)
+
+                # Räkna rader
+                count_result = conn.execute(
+                    f"SELECT COUNT(*) FROM staging.{dataset_id}"
+                ).fetchone()
+                rows = count_result[0] if count_result else 0
+
+                if on_log:
+                    on_log(f"  Skapade staging.{dataset_id} med {rows} rader")
+
+                success_count += 1
+
+            except Exception as e:
+                if on_log:
+                    on_log(f"  Fel vid staging av {dataset_id}: {e}")
+                fail_count += 1
+
+        if on_log:
+            on_log(f"Staging klar: {success_count} lyckade, {fail_count} misslyckade")
+
+        if on_event:
+            on_event(PipelineEvent(
+                event_type="progress",
+                message=f"Staging klar: {success_count} lyckade",
+                progress=1.0,
+            ))
+
+        return fail_count == 0
+
+    async def run_generated_staging_2(
+        self,
+        dataset_ids: list[str],
+        on_log: Callable[[str], None] | None = None,
+        on_event: Callable[[PipelineEvent], None] | None = None,
+    ) -> bool:
+        """Kör staging_2-transformationer med genererad SQL.
+
+        Normaliserar staging-tabeller till staging_2 med enhetlig struktur
+        baserat på konfiguration i datasets.yml.
+
+        Args:
+            dataset_ids: Lista med dataset-ID:n att processa
+            on_log: Callback för loggmeddelanden
+            on_event: Callback för progress-events
+
+        Returns:
+            True om alla processades framgångsrikt
+        """
+        if on_log:
+            on_log("=== Kör staging_2 med genererad SQL ===")
+
+        conn = self._get_connection()
+        generator = SQLGenerator()
+        datasets_config = self._load_datasets_config()
+
+        # Skapa staging_2 schema om det inte finns
+        conn.execute("CREATE SCHEMA IF NOT EXISTS staging_2")
+
+        success_count = 0
+        fail_count = 0
+
+        for i, dataset_id in enumerate(dataset_ids):
+            if on_log:
+                on_log(f"Processar staging_2.{dataset_id}...")
+
+            if on_event:
+                on_event(PipelineEvent(
+                    event_type="progress",
+                    message=f"Staging_2 {dataset_id}...",
+                    dataset=dataset_id,
+                    progress=(i + 0.5) / len(dataset_ids),
+                ))
+
+            # Hämta staging_2-config från datasets.yml
+            ds_config = datasets_config.get(dataset_id, {})
+            staging_2_config = ds_config.get("staging_2", {})
+
+            try:
+                # Generera och kör staging_2 SQL
+                sql = generator.staging2_sql(dataset_id, staging_2_config)
+
+                def do_staging_2_sql(sql_to_run=sql):
+                    conn.execute(sql_to_run)
+
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, do_staging_2_sql)
+
+                # Räkna rader
+                count_result = conn.execute(
+                    f"SELECT COUNT(*) FROM staging_2.{dataset_id}"
+                ).fetchone()
+                rows = count_result[0] if count_result else 0
+
+                if on_log:
+                    on_log(f"  Skapade staging_2.{dataset_id} med {rows} rader")
+
+                success_count += 1
+
+            except Exception as e:
+                if on_log:
+                    on_log(f"  Fel vid staging_2 av {dataset_id}: {e}")
+                fail_count += 1
+
+        if on_log:
+            on_log(f"Staging_2 klar: {success_count} lyckade, {fail_count} misslyckade")
+
+        if on_event:
+            on_event(PipelineEvent(
+                event_type="progress",
+                message=f"Staging_2 klar: {success_count} lyckade",
+                progress=1.0,
+            ))
+
+        return fail_count == 0
+
+    async def run_full_transform_pipeline(
+        self,
+        dataset_ids: list[str],
+        on_log: Callable[[str], None] | None = None,
+        on_event: Callable[[PipelineEvent], None] | None = None,
+    ) -> bool:
+        """Kör hela transform-pipelinen med genererad SQL.
+
+        Steg:
+        1. Staging (raw → staging med H3 via SQL-makron)
+        2. Staging_2 (staging → staging_2 normalisering)
+        3. Mart (staging_2 → mart.h3_cells aggregering)
+
+        Args:
+            dataset_ids: Lista med dataset-ID:n att processa
+            on_log: Callback för loggmeddelanden
+            on_event: Callback för progress-events
+
+        Returns:
+            True om allt lyckades
+        """
+        success = True
+
+        # Steg 1: Staging
+        if on_log:
+            on_log("\n=== STEG 1: Staging ===")
+        staging_ok = await self.run_generated_staging(dataset_ids, on_log, on_event)
+        success = success and staging_ok
+
+        # Steg 2: Staging_2
+        if on_log:
+            on_log("\n=== STEG 2: Staging_2 ===")
+        staging_2_ok = await self.run_generated_staging_2(dataset_ids, on_log, on_event)
+        success = success and staging_2_ok
+
+        # Steg 3: Mart (kör zzz_end SQL-filer + populera h3_cells)
+        if on_log:
+            on_log("\n=== STEG 3: Mart ===")
+
+        # Kör mart SQL-filer (zzz_end)
+        mart_ok = await self.run_transforms(
+            dataset_ids=None,  # Kör bara zzz_end
+            folders=["mart"],
+            on_log=on_log,
+        )
+        success = success and mart_ok
+
+        # Populera h3_cells
+        h3_ok = await self.populate_h3_cells(on_log)
+        success = success and h3_ok
+
+        if on_log:
+            status = "lyckades" if success else "misslyckades"
+            on_log(f"\n=== Transform-pipeline {status} ===")
+
+        return success
 
     async def stop(self):
         """Stoppa pågående körning."""

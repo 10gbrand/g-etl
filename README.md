@@ -18,15 +18,14 @@ flowchart TB
 
     subgraph Staging["2. STAGING (SQL + H3)"]
         direction TB
-        R --> S1["sql/staging/_common/<br/>00_staging_procedure.sql"]
-        S1 --> S2["sql/staging/{dataset}/<br/>01_staging.sql<br/>(inkl. H3 via DuckDB extension)"]
+        R --> S1["migrations/004<br/>staging_procedure.sql<br/>(makron)"]
+        S1 --> S2["SQLGenerator<br/>staging_sql()<br/>(genererad SQL)"]
         S2 --> ST[(staging.* med H3)]
     end
 
     subgraph Staging2["3. STAGING_2 (Normalisering)"]
         direction TB
-        ST --> M1["sql/staging_2/_common/<br/>01_output_functions.sql"]
-        M1 --> M2["sql/staging_2/{dataset}/<br/>01_mart_h3.sql"]
+        ST --> M2["SQLGenerator<br/>staging2_sql()<br/>(genererad SQL)"]
         M2 --> ST2[(staging_2.*)]
     end
 
@@ -63,11 +62,13 @@ Plugins laddar ner och läser in geodata till `raw`-schemat i DuckDB.
 
 ### Steg 2: Staging (SQL + H3 → staging.*)
 
-#### 2a. Common SQL
-`sql/staging/_common/00_staging_procedure.sql` körs först och definierar makron.
+#### 2a. Makron från migrering
+`sql/migrations/004_staging_procedure.sql` definierar makron för H3-beräkning och
+geometrihantering. Dessa installeras vid `task db:migrate`.
 
-#### 2b. Dataset SQL
-`sql/staging/{dataset}/01_staging.sql` skapar staging-tabellen med:
+#### 2b. Genererad SQL
+`SQLGenerator.staging_sql()` genererar staging-SQL baserat på `datasets.yml`.
+Staging-tabellen skapas med:
 
 - Validerad geometri (`geom`)
 - Metadata: `_imported_at`, `_geom_md5`, `_attr_md5`, `_json_data`
@@ -89,11 +90,9 @@ to_json(h3_polygon_wkt_to_cells_string(wkt, 11)) AS _h3_cells
 
 Normaliserar alla dataset till en enhetlig struktur.
 
-#### 3a. Common SQL
-`sql/staging_2/_common/01_output_functions.sql` definierar makron för output.
-
-#### 3b. Dataset SQL
-`sql/staging_2/{dataset}/01_mart_h3.sql` skapar den normaliserade tabellen med:
+#### 3a. Genererad SQL
+`SQLGenerator.staging2_sql()` genererar normaliserings-SQL baserat på `datasets.yml`.
+Konfiguration i `staging_2:`-blocket styr hur data mappas:
 
 ```sql
 SELECT
@@ -126,24 +125,27 @@ Aggregerar alla dataset till en gemensam H3-tabell.
 
 **Resultat:** `mart.h3_cells` – aggregerad tabell redo för analys och export.
 
-## Körordning för SQL-filer
+## Transform-pipeline
 
-SQL-filer körs i **alfabetisk ordning** baserat på sökväg:
+Transformationer körs i följande ordning:
 
 ```
-sql/staging/_common/00_staging_procedure.sql       ← Först (underscore sorteras före a-z)
-sql/staging/avverkningsanmalningar/01_staging.sql
-sql/staging/biotopskydd/01_staging.sql
-...
-sql/staging/vso/01_staging.sql
+1. Migrationer (task db:migrate)
+   └── sql/migrations/004_staging_procedure.sql   ← Installerar makron
 
-sql/staging_2/_common/01_output_functions.sql      ← Först i staging_2
-sql/staging_2/avverkningsanmalningar/01_mart_h3.sql
-sql/staging_2/biotopskydd/01_mart_h3.sql
-...
-sql/staging_2/vso/01_mart_h3.sql
+2. Staging (genererad SQL per dataset)
+   └── SQLGenerator.staging_sql(dataset_id, config)
+       - Läser config från datasets.yml staging:
+       - Genererar och kör CREATE TABLE staging.{dataset}
 
-sql/mart/zzz_end/01_end.sql                        ← Sist (zzz sorteras efter a-z)
+3. Staging_2 (genererad SQL per dataset)
+   └── SQLGenerator.staging2_sql(dataset_id, config)
+       - Läser config från datasets.yml staging_2:
+       - Genererar och kör CREATE TABLE staging_2.{dataset}
+
+4. Mart (SQL-filer + dynamisk populering)
+   └── sql/mart/zzz_end/01_end.sql               ← Skapar mart.h3_cells struktur
+   └── pipeline_runner.populate_h3_cells()        ← Populerar från staging_2.*
 ```
 
 ## DuckDB-scheman
@@ -171,7 +173,11 @@ g-etl/
 │   ├── lantmateriet.py    # Lantmäteriets API
 │   └── mssql.py           # Microsoft SQL Server
 ├── sql/
-│   ├── _init/             # Databas-initiering
+│   ├── migrations/        # Versionerade databasmigrationer
+│   │   ├── 001_extensions.sql
+│   │   ├── 002_schemas.sql
+│   │   └── 003_macros.sql
+│   ├── _init/             # Databas-initiering (legacy)
 │   ├── staging/           # Staging SQL per dataset
 │   │   ├── _common/       # Gemensamma makron
 │   │   └── {dataset}/     # Dataset-specifik SQL
@@ -181,7 +187,14 @@ g-etl/
 │   └── mart/              # Aggregering
 │       └── zzz_end/       # Slutskript (körs sist)
 ├── scripts/
+│   ├── migrations/        # Migreringsmotor
+│   │   ├── migrator.py    # Core migreringslogik
+│   │   └── cli.py         # CLI för migrationer
 │   ├── admin/             # Textual TUI-applikation
+│   │   ├── screens/
+│   │   │   ├── pipeline.py     # Pipeline-körning
+│   │   │   ├── explorer.py     # Data-utforskare
+│   │   │   └── migrations.py   # Migrationshantering
 │   │   └── services/
 │   │       ├── pipeline_runner.py    # Pipeline-körare
 │   │       └── staging_processor.py  # Staging-processor
@@ -205,8 +218,8 @@ g-etl/
 # Installera dependencies
 task py:install
 
-# Initiera databas
-task db:init
+# Kör databasmigrationer
+task db:migrate
 ```
 
 ### Köra pipelinen
@@ -268,9 +281,43 @@ SELECT COUNT(*) FROM mart.h3_cells;
 SELECT * FROM mart.sksbiotopskydd LIMIT 10;
 ```
 
+### Migrationer
+
+SQL-baserat migreringssystem som fungerar med både DuckDB och PostgreSQL.
+
+```bash
+# Visa status för migrationer
+task db:migrate:status
+
+# Kör väntande migrationer
+task db:migrate
+
+# Rulla tillbaka senaste migreringen
+task db:migrate:rollback
+
+# Skapa ny migrering
+task db:migrate:create -- "add_new_table"
+```
+
+Migreringsfiler använder `-- migrate:up` och `-- migrate:down` för att separera up/down-SQL:
+
+```sql
+-- Migration: add_new_table
+-- migrate:up
+CREATE TABLE mart.analytics (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR
+);
+
+-- migrate:down
+DROP TABLE mart.analytics;
+```
+
+Migrationer spåras i tabellen `_migrations` och kan även hanteras via TUI (tryck **G** i Pipeline-screenen).
+
 ## Dataset
 
-Dataset konfigureras i `config/datasets.yml`:
+Dataset konfigureras i `config/datasets.yml` med staging- och staging_2-konfiguration:
 
 ```yaml
 datasets:
@@ -280,14 +327,44 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/.../sksBiotopskydd_gpkg.zip
     enabled: true
+    # Staging: raw → staging med H3
+    staging:
+      source_id_column: objectid  # Kolumn för käll-ID hash
+    # Staging_2: staging → staging_2 normalisering
+    staging_2:
+      klass: biotopskydd          # Klassificering
+      grupp: Biotyp               # Kolumnreferens för grupp
+      typ: Naturtyp               # Kolumnreferens för typ
+      leverantor: sks             # Dataleverantör
+      source_id_column: beteckn   # Kolumn för source_id
 
-  - id: giss_gavd
-    name: GISS GAVD
-    plugin: zip_geopackage
-    url: /Volumes/T9/spring/GISS.gpkg.zip  # Lokal fil
-    layer: GAVD
-    enabled: false
+  - id: nationalparker
+    name: Nationalparker
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/.../NP.zip
+    enabled: true
+    staging:
+      source_id_column: NVRID
+    staging_2:
+      klass: nationalpark
+      leverantor: nvv
 ```
+
+### Staging-konfiguration
+
+| Fält | Beskrivning |
+|------|-------------|
+| `source_id_column` | Kolumn att använda för `_source_id_md5` hash |
+
+### Staging_2-konfiguration
+
+| Fält | Beskrivning |
+|------|-------------|
+| `klass` | Klassificering (biotopskydd, naturreservat, etc.) |
+| `grupp` | Undergrupp - kan vara literal sträng eller kolumnnamn |
+| `typ` | Specifik typ - kan vara literal sträng eller kolumnnamn |
+| `leverantor` | Dataleverantör (sks, nvv, sgu) |
+| `source_id_column` | Kolumn för source_id i output |
 
 ## H3 Spatial Index
 
@@ -318,10 +395,48 @@ ST_Transform(geom, 'EPSG:3006', 'EPSG:4326')
 
 ### Lägga till nytt dataset
 
-1. Lägg till konfiguration i `config/datasets.yml`
-2. Skapa `sql/staging/{dataset}/01_staging.sql`
-3. Skapa `sql/staging_2/{dataset}/01_mart_h3.sql`
-4. Uppdatera `sql/mart/zzz_end/01_end.sql` om det ska ingå i h3_cells
+1. Lägg till konfiguration i `config/datasets.yml` med `staging` och `staging_2` block
+2. Kör pipelinen - SQL genereras automatiskt baserat på konfigurationen
+
+Staging- och staging_2-SQL genereras nu automatiskt via `SQLGenerator` baserat på
+konfiguration i datasets.yml. Du behöver inte längre skapa SQL-filer för varje dataset.
+
+### SQL-generator
+
+Pipelinen använder `scripts/sql_generator.py` för att generera staging-SQL:
+
+```python
+from scripts.sql_generator import SQLGenerator
+
+generator = SQLGenerator()
+
+# Generera staging SQL
+sql = generator.staging_sql("sksbiotopskydd", {
+    "source_id_column": "objectid"
+})
+
+# Generera staging_2 SQL
+sql = generator.staging2_sql("sksbiotopskydd", {
+    "klass": "biotopskydd",
+    "grupp": "Biotyp",        # Kolumnreferens
+    "typ": "Naturtyp",        # Kolumnreferens
+    "leverantor": "sks",
+    "source_id_column": "beteckn"
+})
+```
+
+### Makron från migrering 004
+
+Staging-SQL använder makron definierade i `sql/migrations/004_staging_procedure.sql`:
+
+| Makro | Beskrivning |
+|-------|-------------|
+| `validate_geom(geom)` | Validera och fixa geometri |
+| `wgs84_centroid_lat(geom)` | Centroid latitud i WGS84 |
+| `wgs84_centroid_lng(geom)` | Centroid longitud i WGS84 |
+| `h3_centroid(geom)` | H3-cell för centroid (res 13) |
+| `h3_polyfill(geom)` | Alla H3-celler inom polygon (res 11) |
+| `json_without_geom(json)` | Ta bort geometri från JSON |
 
 ### Lägga till ny plugin
 

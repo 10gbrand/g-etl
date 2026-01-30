@@ -32,8 +32,13 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 
 **Database:**
 - `task db:cli` - Öppna DuckDB REPL
-- `task db:init` - Initiera databas med extensions
-- `task db:migrate` - Kör alla migrationer
+- `task db:init` - Initiera databas med extensions (legacy)
+
+**Migrationer:**
+- `task db:migrate` - Kör alla väntande migrationer
+- `task db:migrate:status` - Visa status för migrationer
+- `task db:migrate:rollback` - Rulla tillbaka senaste migreringen
+- `task db:migrate:create -- "namn"` - Skapa ny migrering
 
 **Admin TUI:**
 - `task admin:run` - Starta admin TUI
@@ -63,20 +68,41 @@ Admin TUI (Textual) → Pipeline Runner → Plugins → DuckDB
 **Nyckelkomponenter:**
 
 - `plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)
-- `sql/_init/` - Databas-initiering (extensions, scheman, makron)
+- `sql/migrations/` - Versionerade databasmigrationer (up/down)
+- `sql/_init/` - Databas-initiering (legacy, ersätts av migrations)
 - `sql/staging/` - SQL för validering, metadata och H3-indexering
 - `sql/staging_2/` - SQL för normalisering till enhetlig struktur
 - `sql/mart/` - SQL för aggregering (zzz_end/01_end.sql skapar mart.h3_cells)
+- `scripts/migrations/` - Migreringsmotor och CLI
 - `scripts/pipeline.py` - Pipeline-runner (CLI)
 - `scripts/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet)
 - `scripts/db.py` - Gemensamma databasverktyg
 - `scripts/admin/app.py` - Textual TUI-applikation
+- `scripts/admin/screens/migrations.py` - TUI för migrationshantering
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
 - `config/settings.py` - Centrala inställningar (H3-resolution, CRS, etc.)
 
-**DuckDB-initiering (sql/_init/):**
+**Migrationer (sql/migrations/):**
 
-Körs automatiskt vid varje databasanslutning i alfabetisk ordning:
+SQL-baserat migreringssystem som fungerar med både DuckDB och PostgreSQL. Migrationer spåras i tabellen `_migrations`.
+
+Filformat:
+```sql
+-- migrate:up
+CREATE SCHEMA raw;
+
+-- migrate:down
+DROP SCHEMA raw CASCADE;
+```
+
+Befintliga migrationer:
+- `001_extensions.sql` - Installerar DuckDB extensions (spatial, parquet, httpfs, json, h3)
+- `002_schemas.sql` - Skapar scheman (raw, staging, staging_2, mart)
+- `003_macros.sql` - Definierar återanvändbara SQL-makron
+
+**DuckDB-initiering (sql/_init/) [Legacy]:**
+
+Körs automatiskt vid varje databasanslutning i alfabetisk ordning (ersätts successivt av migrationer):
 
 - `01_extensions.sql` - Installerar och laddar extensions (spatial, parquet, httpfs, json, h3)
 - `02_schemas.sql` - Skapar scheman (raw, staging, staging_2, mart)

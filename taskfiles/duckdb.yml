@@ -34,30 +34,24 @@ tasks:
       - duckdb -init {{.INIT_FILE}} {{.DB_FILE}} < "{{.CLI_ARGS}}"
 
   migrate:
-    desc: Kör alla migrationer i ordning
+    desc: Kör alla väntande migrationer
     cmds:
-      - |
-        for f in migrations/*.sql; do
-          echo "Kör: $f"
-          duckdb {{.DB_FILE}} < "$f"
-        done
+      - uv run python -m scripts.migrations.cli migrate
 
-  migrate-new:
-    desc: Skapa ny migration (task db:migrate-new -- namn)
+  migrate:rollback:
+    desc: Rulla tillbaka senaste migreringen
     cmds:
-      - |
-        timestamp=$(date +%Y%m%d%H%M%S)
-        filename="migrations/${timestamp}_{{.CLI_ARGS}}.sql"
-        echo "-- Migration: {{.CLI_ARGS}}" > "$filename"
-        echo "-- Created: $(date +%Y-%m-%d)" >> "$filename"
-        echo "-- Description: " >> "$filename"
-        echo "" >> "$filename"
-        echo "Skapad: $filename"
+      - uv run python -m scripts.migrations.cli rollback
 
-  migrate-status:
-    desc: Visa körda migrationer
+  migrate:status:
+    desc: Visa status för alla migrationer
     cmds:
-      - duckdb {{.DB_FILE}} "SELECT * FROM _migrations ORDER BY id;"
+      - uv run python -m scripts.migrations.cli status
+
+  migrate:create:
+    desc: Skapa ny migrering (task db:migrate:create -- namn)
+    cmds:
+      - uv run python -m scripts.migrations.cli create "{{.CLI_ARGS}}"
 
   extensions:
     desc: Visa installerade extensions
