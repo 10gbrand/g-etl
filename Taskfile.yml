@@ -14,10 +14,10 @@ tasks:
       - task --list
 
   init:
-    desc: Initiera hela projektet (Python, Docker, etc.)
+    desc: Initiera hela projektet (Python, Docker, migrationer)
     cmds:
       - task py:install
-      - task db:init
+      - task db:migrate
       - echo "Projekt initierat!"
 
   run:

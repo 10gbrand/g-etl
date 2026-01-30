@@ -144,6 +144,7 @@ class PipelineScreen(Screen):
         Binding("c", "clear_selection", "Rensa val"),
         Binding("d", "clear_data", "Rensa data"),
         Binding("e", "app.push_screen('explorer')", "Explorer"),
+        Binding("g", "app.push_screen('migrations')", "Migrationer"),
         Binding("m", "toggle_mock", "Mock-läge"),
         Binding("q", "quit", "Avsluta"),
     ]

@@ -8,6 +8,7 @@ from textual.app import App
 
 from scripts.admin.models.dataset import DatasetConfig
 from scripts.admin.screens.explorer import ExplorerScreen
+from scripts.admin.screens.migrations import MigrationsScreen
 from scripts.admin.screens.pipeline import PipelineScreen
 from scripts.admin.services.db_session import cleanup_old_databases, get_session_db_path
 
@@ -54,6 +55,10 @@ class AdminApp(App):
         self.install_screen(
             lambda: ExplorerScreen(db_path=self.db_path),
             name="explorer",
+        )
+        self.install_screen(
+            lambda: MigrationsScreen(db_path=self.db_path),
+            name="migrations",
         )
 
         # Visa pipeline-screen som standard
