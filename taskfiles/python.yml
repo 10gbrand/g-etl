@@ -40,3 +40,23 @@ tasks:
     desc: Uppdatera uv.lock
     cmds:
       - uv lock
+
+  test:
+    desc: Kör alla tester
+    cmds:
+      - uv run pytest tests/ -v
+
+  test:fast:
+    desc: Kör snabba tester (utan coverage)
+    cmds:
+      - uv run pytest tests/ -v --tb=short
+
+  test:cov:
+    desc: Kör tester med coverage-rapport
+    cmds:
+      - uv run pytest tests/ -v --cov=. --cov-report=term-missing
+
+  test:watch:
+    desc: Kör tester i watch-mode (kräver pytest-watch)
+    cmds:
+      - uv run ptw tests/

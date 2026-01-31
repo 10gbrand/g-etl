@@ -29,6 +29,9 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 - `task py:install` - Installera dependencies med UV
 - `task py:lint` - Kör ruff linting
 - `task py:format` - Formatera kod med ruff
+- `task py:test` - Kör alla tester
+- `task py:test:fast` - Kör snabba tester (utan coverage)
+- `task py:test:cov` - Kör tester med coverage-rapport
 
 **Database:**
 - `task db:cli` - Öppna DuckDB REPL
