@@ -1,0 +1,127 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:  # Manuell körning för test
+
+jobs:
+  build-linux:
+    name: Build Linux binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build with Nuitka in Docker
+        run: |
+          docker build -f Dockerfile.nuitka -t g-etl-nuitka .
+
+          # Extrahera binären från imagen
+          docker create --name extract g-etl-nuitka
+          docker cp extract:/app/g_etl ./g_etl-linux-x86_64
+          docker rm extract
+
+          # Verifiera
+          ls -la g_etl-linux-x86_64
+          file g_etl-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: g_etl-linux-x86_64
+          path: g_etl-linux-x86_64
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: g_etl-linux-x86_64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    name: Build macOS binary
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv pip install --system nuitka ordered-set zstandard
+          uv pip install --system \
+            textual duckdb pyyaml jinja2 rich h3 requests python-dotenv pytz
+
+      - name: Build with Nuitka
+        run: |
+          python -m nuitka \
+            --standalone \
+            --onefile \
+            --output-dir=build \
+            --include-data-dir=config=config \
+            --include-data-dir=sql=sql \
+            --nofollow-import-to=pytest \
+            --nofollow-import-to=setuptools \
+            --nofollow-import-to=geopandas \
+            --nofollow-import-to=pandas \
+            --nofollow-import-to=pyarrow \
+            --nofollow-import-to=shapely \
+            --nofollow-import-to=fiona \
+            --nofollow-import-to=numpy \
+            --assume-yes-for-downloads \
+            scripts/admin/app.py
+
+          # Byt namn på binären
+          mv build/app.bin g_etl-macos-arm64 || mv build/app g_etl-macos-arm64
+
+          # Verifiera
+          ls -la g_etl-macos-*
+          file g_etl-macos-*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: g_etl-macos-arm64
+          path: g_etl-macos-arm64
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: g_etl-macos-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install UV
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
