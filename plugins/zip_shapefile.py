@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
-import geopandas as gpd
 import requests
 
 from plugins.base import ExtractResult, SourcePlugin
@@ -124,27 +123,33 @@ class ZipShapefilePlugin(SourcePlugin):
                 if missing:
                     self._log(f"Varning: saknar kompanjonsfiler: {missing}", on_log)
 
-                self._log(f"Läser {shp_path.name} med encoding {encoding}...", on_log)
+                self._log(f"Läser {shp_path.name}...", on_log)
                 self._progress(0.65, f"Läser {shp_path.name}...", on_progress)
 
-                # Läs Shapefile med geopandas (hanterar encoding korrekt)
-                gdf = gpd.read_file(shp_path, encoding=encoding)
-
-                self._log(f"Sparar till GeoParquet...", on_log)
-                self._progress(0.75, "Sparar till GeoParquet...", on_progress)
-
-                # Spara som GeoParquet (kringgår DuckDB encoding-bugg)
-                parquet_path = Path(tmp_dir) / f"{table_name}.parquet"
-                gdf.to_parquet(parquet_path)
-
-                self._log(f"Laddar in i DuckDB...", on_log)
-                self._progress(0.85, "Laddar in i DuckDB...", on_progress)
-
-                # Läs in GeoParquet till DuckDB
-                conn.execute(f"""
-                    CREATE OR REPLACE TABLE raw.{table_name} AS
-                    SELECT * FROM '{parquet_path}'
-                """)
+                # Försök läsa med DuckDB ST_Read först
+                try:
+                    conn.execute(f"""
+                        CREATE OR REPLACE TABLE raw.{table_name} AS
+                        SELECT * FROM ST_Read('{shp_path}')
+                    """)
+                except Exception as st_read_error:
+                    # Fallback: Använd geopandas för encoding-problem
+                    self._log(f"DuckDB ST_Read misslyckades, testar geopandas...", on_log)
+                    rows_count = self._read_with_geopandas(
+                        conn, shp_path, table_name, encoding, on_log, on_progress
+                    )
+                    if rows_count is not None:
+                        # Rensa zip-fil
+                        Path(zip_path).unlink(missing_ok=True)
+                        self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
+                        self._progress(1.0, f"Läste {rows_count} rader", on_progress)
+                        return ExtractResult(
+                            success=True,
+                            rows_count=rows_count,
+                            message=f"Läste {rows_count} rader från {shp_path.name} (via geopandas)",
+                        )
+                    # Om geopandas också misslyckas, kasta ursprungliga felet
+                    raise st_read_error
 
                 self._progress(0.9, "Räknar rader...", on_progress)
 
@@ -175,3 +180,57 @@ class ZipShapefilePlugin(SourcePlugin):
             error_msg = f"Fel vid läsning av Shapefile: {e}"
             self._log(error_msg, on_log)
             return ExtractResult(success=False, message=error_msg)
+
+    def _read_with_geopandas(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        shp_path: Path,
+        table_name: str,
+        encoding: str,
+        on_log: Callable[[str], None] | None = None,
+        on_progress: Callable[[float, str], None] | None = None,
+    ) -> int | None:
+        """Läs Shapefile med geopandas (fallback för encoding-problem).
+
+        Returns:
+            Antal rader eller None vid fel.
+        """
+        try:
+            # Lazy import - geopandas laddas bara när det behövs
+            import geopandas as gpd
+
+            self._log(f"Läser med geopandas (encoding={encoding})...", on_log)
+            self._progress(0.7, f"Läser med geopandas...", on_progress)
+
+            # Läs Shapefile med geopandas (hanterar encoding korrekt)
+            gdf = gpd.read_file(shp_path, encoding=encoding)
+
+            self._log("Sparar till GeoParquet...", on_log)
+            self._progress(0.8, "Sparar till GeoParquet...", on_progress)
+
+            # Spara som GeoParquet (kringgår DuckDB encoding-bugg)
+            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+                parquet_path = tmp.name
+
+            gdf.to_parquet(parquet_path)
+
+            self._log("Laddar in i DuckDB...", on_log)
+            self._progress(0.9, "Laddar in i DuckDB...", on_progress)
+
+            # Läs in GeoParquet till DuckDB
+            conn.execute(f"""
+                CREATE OR REPLACE TABLE raw.{table_name} AS
+                SELECT * FROM '{parquet_path}'
+            """)
+
+            # Rensa temporär fil
+            Path(parquet_path).unlink(missing_ok=True)
+
+            return len(gdf)
+
+        except ImportError:
+            self._log("geopandas är inte installerat - kan inte använda fallback", on_log)
+            return None
+        except Exception as e:
+            self._log(f"Geopandas-fallback misslyckades: {e}", on_log)
+            return None

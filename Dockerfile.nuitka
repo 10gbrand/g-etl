@@ -1,5 +1,10 @@
 # Dockerfile för Nuitka-bygge av G-ETL Admin TUI (Linux x86_64)
 # Multi-stage build för att minimera storlek
+#
+# Geopandas/pyarrow är nu optional (lazy import) och exkluderas.
+# De flesta datasets fungerar utan dem - de behövs bara för:
+# - MULTISURFACE-geometrier i GeoPackage (sällsynt)
+# - Encoding-problem i Shapefiles (sällsynt, DuckDB hanterar ofta detta)
 
 # === Stage 1: Bygg med Nuitka ===
 FROM python:3.12-bookworm AS builder
