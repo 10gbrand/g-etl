@@ -10,7 +10,6 @@ import yaml
 
 from config.settings import settings
 from plugins import get_plugin
-from scripts.admin.services.staging_processor import process_all_to_staging
 from scripts.sql_generator import SQLGenerator
 
 
@@ -58,23 +57,47 @@ class PipelineRunner:
         return self._conn
 
     def _init_database(self):
-        """Initiera databas med extensions, scheman och makron."""
+        """Initiera databas med extensions, scheman och makron.
+
+        Kör endast infrastruktur-filer (001-003):
+        - 001_db_extensions.sql
+        - 002_db_schemas.sql
+        - 003_db_makros.sql
+
+        Template-filer (*_template.sql) och andra filer (004+) körs
+        separat under respektive pipeline-fas.
+        """
         conn = self._conn
         if conn is None:
             return
 
-        # Kör alla init-skript i sql/_init/ i sorterad ordning
-        init_folder = self.sql_path / "_init"
+        # Kör endast infrastruktur-skript (001-003) i sql/migrations/
+        init_folder = self.sql_path / "migrations"
         if init_folder.exists():
             for sql_file in sorted(init_folder.glob("*.sql")):
-                try:
-                    sql = sql_file.read_text()
-                    conn.execute(sql)
-                except Exception:
-                    # Ignorera fel (t.ex. om extension redan laddad)
-                    pass
+                # Hoppa över template-filer (de körs per dataset)
+                if "_template.sql" in sql_file.name:
+                    continue
+
+                # Kör endast filer som börjar med 001, 002 eller 003
+                # (extensions, scheman, makron)
+                if not sql_file.name[:3] in ("001", "002", "003"):
+                    continue
+
+                sql_content = sql_file.read_text()
+
+                # Dela upp SQL-filen i enskilda statements
+                # (DuckDB execute() kan bara köra ett statement åt gången)
+                statements = self._split_sql_statements(sql_content)
+
+                for stmt in statements:
+                    try:
+                        conn.execute(stmt)
+                    except Exception:
+                        # Ignorera förväntade fel (t.ex. extension redan laddad)
+                        pass
         else:
-            # Fallback om _init-mappen inte finns
+            # Fallback om migrations-mappen inte finns
             for ext in ["spatial", "parquet", "httpfs", "json"]:
                 try:
                     conn.execute(f"INSTALL {ext}")
@@ -82,8 +105,90 @@ class PipelineRunner:
                 except Exception:
                     pass
 
-            for schema in ["raw", "staging", "mart"]:
+            for schema in ["raw", "staging", "staging_2", "mart"]:
                 conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+
+    def _split_sql_statements(self, sql_content: str) -> list[str]:
+        """Dela upp SQL-innehåll i enskilda statements.
+
+        Hanterar:
+        - Semikolon som statement-avslutare
+        - Kommentarer (-- och /* */)
+        - Strängar med enkla citattecken
+        - migrate:down sektioner (ignoreras)
+
+        Args:
+            sql_content: SQL-fil innehåll
+
+        Returns:
+            Lista med enskilda SQL-statements
+        """
+        # Stoppa vid migrate:down (kör bara "up" migrationer)
+        if "-- migrate:down" in sql_content:
+            sql_content = sql_content.split("-- migrate:down")[0]
+
+        statements = []
+        current_stmt = []
+        in_string = False
+        in_block_comment = False
+        i = 0
+
+        while i < len(sql_content):
+            char = sql_content[i]
+
+            # Hantera block-kommentarer /* */
+            if not in_string and sql_content[i:i + 2] == "/*":
+                in_block_comment = True
+                current_stmt.append(char)
+                i += 1
+            elif in_block_comment and sql_content[i:i + 2] == "*/":
+                in_block_comment = False
+                current_stmt.append(char)
+                current_stmt.append(sql_content[i + 1])
+                i += 2
+                continue
+            elif in_block_comment:
+                current_stmt.append(char)
+                i += 1
+                continue
+
+            # Hantera rad-kommentarer --
+            if not in_string and sql_content[i:i + 2] == "--":
+                # Läs till slutet av raden
+                while i < len(sql_content) and sql_content[i] != "\n":
+                    current_stmt.append(sql_content[i])
+                    i += 1
+                if i < len(sql_content):
+                    current_stmt.append(sql_content[i])
+                    i += 1
+                continue
+
+            # Hantera strängar
+            if char == "'" and not in_block_comment:
+                in_string = not in_string
+                current_stmt.append(char)
+                i += 1
+                continue
+
+            # Statement-avslutare
+            if char == ";" and not in_string and not in_block_comment:
+                current_stmt.append(char)
+                stmt = "".join(current_stmt).strip()
+                if stmt and stmt != ";":
+                    statements.append(stmt)
+                current_stmt = []
+                i += 1
+                continue
+
+            current_stmt.append(char)
+            i += 1
+
+        # Hantera eventuellt kvarvarande statement utan semikolon
+        remaining = "".join(current_stmt).strip()
+        if remaining and remaining != ";":
+            statements.append(remaining)
+
+        return statements
 
     async def run_dataset(
         self,
@@ -217,97 +322,6 @@ class PipelineRunner:
                     success = False
 
         return success
-
-    async def populate_h3_cells(
-        self,
-        on_log: Callable[[str], None] | None = None,
-    ) -> bool:
-        """Populera mart.h3_cells dynamiskt från alla tabeller i staging_2.
-
-        Hämtar alla tabeller i staging_2-schemat och skapar INSERT-satser
-        för att extrahera H3-celler till mart.h3_cells.
-
-        Args:
-            on_log: Callback för loggmeddelanden.
-
-        Returns:
-            True om populering lyckades.
-        """
-        conn = self._get_connection()
-
-        try:
-            # Hämta alla tabeller i staging_2
-            tables_result = conn.execute("""
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = 'staging_2'
-                ORDER BY table_name
-            """).fetchall()
-
-            tables = [row[0] for row in tables_result]
-
-            if not tables:
-                if on_log:
-                    on_log("Inga tabeller i staging_2 att processa")
-                return True
-
-            if on_log:
-                on_log(f"Populerar mart.h3_cells från {len(tables)} staging_2-tabeller...")
-
-            # Bygg och kör INSERT för varje tabell
-            for table_name in tables:
-                # Kolla att tabellen har nödvändiga kolumner
-                cols_result = conn.execute(f"""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = 'staging_2'
-                    AND table_name = '{table_name}'
-                """).fetchall()
-                cols = [row[0] for row in cols_result]
-
-                # Hoppa över om nödvändiga kolumner saknas
-                if 'h3_cells' not in cols:
-                    if on_log:
-                        on_log(f"  Hoppar {table_name} (saknar h3_cells)")
-                    continue
-
-                # Bygg INSERT-sats
-                insert_sql = f"""
-                    INSERT INTO mart.h3_cells (h3_cell, dataset, leverantor, klass, classification)
-                    SELECT
-                        unnest(from_json(h3_cells, '["VARCHAR"]')) AS h3_cell,
-                        '{table_name}' AS dataset,
-                        {'leverantor' if 'leverantor' in cols else "NULL"} AS leverantor,
-                        {'klass' if 'klass' in cols else "NULL"} AS klass,
-                        COALESCE(NULLIF({'grupp' if 'grupp' in cols else "'-'"}, ''), '-')
-                        || '.'
-                        || COALESCE(NULLIF({'typ' if 'typ' in cols else "'-'"}, ''), '-') AS classification
-                    FROM staging_2.{table_name}
-                    WHERE h3_cells IS NOT NULL AND h3_cells != '[]'
-                """
-
-                def do_insert(sql=insert_sql):
-                    conn.execute(sql)
-
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, do_insert)
-
-                if on_log:
-                    on_log(f"  Lade till h3_cells från {table_name}")
-
-            # Räkna antal rader i resultat
-            count_result = conn.execute("SELECT COUNT(*) FROM mart.h3_cells").fetchone()
-            total_rows = count_result[0] if count_result else 0
-
-            if on_log:
-                on_log(f"mart.h3_cells skapad med {total_rows} rader")
-
-            return True
-
-        except Exception as e:
-            if on_log:
-                on_log(f"Fel vid populering av mart.h3_cells: {e}")
-            return False
 
     async def run_parallel_extract(
         self,
@@ -517,56 +531,6 @@ class PipelineRunner:
 
         return success
 
-    async def run_staging(
-        self,
-        dataset_ids: list[str],
-        on_log: Callable[[str], None] | None = None,
-        on_event: Callable[[PipelineEvent], None] | None = None,
-    ) -> bool:
-        """Kör staging-transformationer för datasets.
-
-        Processerar raw-tabeller till staging med:
-        - Geometri-validering
-        - Importdatum
-        - MD5-hashar (geometri, attribut, käll-ID)
-        - H3-index för centroid
-        - Centroid lat/lng (för framtida A5)
-
-        Args:
-            dataset_ids: Lista med dataset-ID:n att processa
-            on_log: Callback för loggmeddelanden
-            on_event: Callback för progress-events
-
-        Returns:
-            True om alla processades framgångsrikt
-        """
-        if on_log:
-            on_log("=== Kör staging-transformationer ===")
-
-        if on_event:
-            on_event(PipelineEvent(
-                event_type="progress",
-                message="Startar staging-transformationer...",
-                progress=0.0,
-            ))
-
-        conn = self._get_connection()
-        success_count, fail_count = await process_all_to_staging(
-            conn, dataset_ids, on_log
-        )
-
-        if on_log:
-            on_log(f"Staging klar: {success_count} lyckade, {fail_count} misslyckade")
-
-        if on_event:
-            on_event(PipelineEvent(
-                event_type="progress",
-                message=f"Staging klar: {success_count} lyckade",
-                progress=1.0,
-            ))
-
-        return fail_count == 0
-
     def _load_datasets_config(self) -> dict[str, dict]:
         """Ladda datasets.yml och returnera som dict keyed på dataset id."""
         config_path = settings.CONFIG_DIR / "datasets.yml"
@@ -579,229 +543,463 @@ class PipelineRunner:
         datasets = config.get("datasets", [])
         return {ds["id"]: ds for ds in datasets if "id" in ds}
 
-    async def run_generated_staging(
+    async def run_templates(
         self,
         dataset_ids: list[str],
+        template_filter: str | None = None,
+        phase_name: str | None = None,
+        max_concurrent: int = 4,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> bool:
-        """Kör staging-transformationer med genererad SQL.
+        """Kör templates för alla datasets parallellt.
 
-        Använder SQLGenerator för att skapa staging-SQL baserat på
-        konfiguration i datasets.yml istället för att läsa SQL-filer.
+        Hittar automatiskt alla *_template.sql filer i sql/migrations/
+        och kör dem i nummerordning. Inom varje template körs datasets
+        parallellt för snabbare exekvering.
 
         Args:
             dataset_ids: Lista med dataset-ID:n att processa
+            template_filter: Filtrera templates som innehåller denna sträng
+                            (t.ex. "_staging_", "_staging2_", "_mart_")
+            phase_name: Namn på fasen för loggning (t.ex. "Staging")
+            max_concurrent: Max antal parallella dataset-körningar
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
 
         Returns:
             True om alla processades framgångsrikt
         """
-        if on_log:
-            on_log("=== Kör staging med genererad SQL ===")
-
-        conn = self._get_connection()
         generator = SQLGenerator()
         datasets_config = self._load_datasets_config()
 
-        success_count = 0
-        fail_count = 0
+        # Hämta och filtrera templates
+        all_templates = generator.list_templates()
+        if template_filter:
+            templates = [t for t in all_templates if template_filter in t]
+        else:
+            templates = all_templates
 
-        for i, dataset_id in enumerate(dataset_ids):
+        if not templates:
             if on_log:
-                on_log(f"Processar staging.{dataset_id}...")
+                filter_msg = f" (filter: {template_filter})" if template_filter else ""
+                on_log(f"Inga templates hittades{filter_msg}")
+            return True
 
-            if on_event:
-                on_event(PipelineEvent(
-                    event_type="progress",
-                    message=f"Staging {dataset_id}...",
-                    dataset=dataset_id,
-                    progress=(i + 0.5) / len(dataset_ids),
-                ))
+        phase_display = phase_name or "Templates"
+        if on_log:
+            on_log(f"=== Kör {phase_display} med {len(templates)} template(s), {max_concurrent} parallella ===")
 
-            # Hämta staging-config från datasets.yml
-            ds_config = datasets_config.get(dataset_id, {})
-            staging_config = ds_config.get("staging", {})
+        semaphore = asyncio.Semaphore(max_concurrent)
+        completed_count = 0
+        total_tasks = len(templates) * len(dataset_ids)
+        results: list[tuple[str, str, bool, str | None]] = []  # (template, dataset, success, error)
 
-            try:
-                # Generera och kör staging SQL
-                sql = generator.staging_sql(dataset_id, staging_config)
+        async def process_dataset(template_name: str, dataset_id: str) -> tuple[str, str, bool, str | None]:
+            """Processa ett dataset med en template."""
+            nonlocal completed_count
 
-                def do_staging_sql(sql_to_run=sql):
-                    conn.execute(sql_to_run)
+            async with semaphore:
+                # Hämta config från datasets.yml
+                ds_config = datasets_config.get(dataset_id, {})
 
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, do_staging_sql)
+                if on_event:
+                    on_event(PipelineEvent(
+                        event_type="progress",
+                        message=f"{phase_display} {dataset_id}...",
+                        dataset=dataset_id,
+                        progress=completed_count / total_tasks,
+                    ))
 
-                # Räkna rader
-                count_result = conn.execute(
-                    f"SELECT COUNT(*) FROM staging.{dataset_id}"
-                ).fetchone()
-                rows = count_result[0] if count_result else 0
+                try:
+                    # Generera SQL
+                    sql = generator.render_template(template_name, dataset_id, ds_config)
+                    if not sql:
+                        completed_count += 1
+                        return (template_name, dataset_id, True, None)
 
-                if on_log:
-                    on_log(f"  Skapade staging.{dataset_id} med {rows} rader")
+                    # Kör SQL med egen connection (för thread-safety)
+                    def do_sql():
+                        # Varje parallell task får egen connection
+                        task_conn = duckdb.connect(self.db_path)
+                        try:
+                            task_conn.execute(sql)
+                        finally:
+                            task_conn.close()
 
-                success_count += 1
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, do_sql)
 
-            except Exception as e:
-                if on_log:
-                    on_log(f"  Fel vid staging av {dataset_id}: {e}")
-                fail_count += 1
+                    completed_count += 1
+                    if on_log:
+                        on_log(f"  {dataset_id}: {template_name} OK")
+
+                    return (template_name, dataset_id, True, None)
+
+                except Exception as e:
+                    completed_count += 1
+                    if on_log:
+                        on_log(f"  {dataset_id}: FEL - {e}")
+                    return (template_name, dataset_id, False, str(e))
+
+        # Kör templates sekventiellt (de kan ha dependencies)
+        # men datasets parallellt inom varje template
+        for template_name in templates:
+            tasks = [
+                process_dataset(template_name, dataset_id)
+                for dataset_id in dataset_ids
+            ]
+            template_results = await asyncio.gather(*tasks)
+            results.extend(template_results)
+
+        success_count = sum(1 for r in results if r[2])
+        fail_count = sum(1 for r in results if not r[2])
 
         if on_log:
-            on_log(f"Staging klar: {success_count} lyckade, {fail_count} misslyckade")
-
-        if on_event:
-            on_event(PipelineEvent(
-                event_type="progress",
-                message=f"Staging klar: {success_count} lyckade",
-                progress=1.0,
-            ))
+            on_log(f"{phase_display} klar: {success_count} lyckade, {fail_count} misslyckade")
 
         return fail_count == 0
 
-    async def run_generated_staging_2(
+    async def run_parallel_transform(
         self,
-        dataset_ids: list[str],
+        parquet_files: list[tuple[str, str]],
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
-    ) -> bool:
-        """Kör staging_2-transformationer med genererad SQL.
+    ) -> list[tuple[str, str]]:
+        """Kör alla templates parallellt med separata temp-DBs per dataset.
 
-        Normaliserar staging-tabeller till staging_2 med enhetlig struktur
-        baserat på konfiguration i datasets.yml.
+        Varje dataset får sin egen DuckDB-fil för äkta parallelism utan
+        fillåsningscontention. Returnerar lista med (dataset_id, temp_db_path)
+        för efterföljande merge.
 
         Args:
-            dataset_ids: Lista med dataset-ID:n att processa
+            parquet_files: Lista av (dataset_id, parquet_path)
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
 
         Returns:
-            True om alla processades framgångsrikt
+            Lista av (dataset_id, temp_db_path) för merge
         """
-        if on_log:
-            on_log("=== Kör staging_2 med genererad SQL ===")
-
-        conn = self._get_connection()
         generator = SQLGenerator()
         datasets_config = self._load_datasets_config()
+        all_templates = generator.list_templates()
 
-        # Skapa staging_2 schema om det inte finns
-        conn.execute("CREATE SCHEMA IF NOT EXISTS staging_2")
+        # Sortera templates i körordning
+        templates = sorted(all_templates)
 
-        success_count = 0
-        fail_count = 0
-
-        for i, dataset_id in enumerate(dataset_ids):
-            if on_log:
-                on_log(f"Processar staging_2.{dataset_id}...")
-
-            if on_event:
-                on_event(PipelineEvent(
-                    event_type="progress",
-                    message=f"Staging_2 {dataset_id}...",
-                    dataset=dataset_id,
-                    progress=(i + 0.5) / len(dataset_ids),
-                ))
-
-            # Hämta staging_2-config från datasets.yml
-            ds_config = datasets_config.get(dataset_id, {})
-            staging_2_config = ds_config.get("staging_2", {})
-
-            try:
-                # Generera och kör staging_2 SQL
-                sql = generator.staging2_sql(dataset_id, staging_2_config)
-
-                def do_staging_2_sql(sql_to_run=sql):
-                    conn.execute(sql_to_run)
-
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, do_staging_2_sql)
-
-                # Räkna rader
-                count_result = conn.execute(
-                    f"SELECT COUNT(*) FROM staging_2.{dataset_id}"
-                ).fetchone()
-                rows = count_result[0] if count_result else 0
-
-                if on_log:
-                    on_log(f"  Skapade staging_2.{dataset_id} med {rows} rader")
-
-                success_count += 1
-
-            except Exception as e:
-                if on_log:
-                    on_log(f"  Fel vid staging_2 av {dataset_id}: {e}")
-                fail_count += 1
+        max_concurrent = settings.MAX_CONCURRENT_SQL
+        semaphore = asyncio.Semaphore(max_concurrent)
+        results: list[tuple[str, str, bool]] = []  # (dataset_id, temp_path, success)
 
         if on_log:
-            on_log(f"Staging_2 klar: {success_count} lyckade, {fail_count} misslyckade")
+            cpu_count = settings.MAX_CONCURRENT_SQL
+            on_log(f"=== Parallell transform: {len(parquet_files)} datasets, {cpu_count} parallella ===")
 
-        if on_event:
-            on_event(PipelineEvent(
-                event_type="progress",
-                message=f"Staging_2 klar: {success_count} lyckade",
-                progress=1.0,
-            ))
+        async def process_dataset(dataset_id: str, parquet_path: str) -> tuple[str, str, bool]:
+            """Processa ett dataset i egen temp-DB."""
+            async with semaphore:
+                temp_db_path = str(settings.get_temp_db_path(dataset_id))
+                ds_config = datasets_config.get(dataset_id, {})
 
-        return fail_count == 0
+                if on_event:
+                    on_event(PipelineEvent(
+                        event_type="dataset_started",
+                        message=f"Transform {dataset_id}",
+                        dataset=dataset_id,
+                    ))
 
-    async def run_full_transform_pipeline(
+                try:
+                    def do_transform():
+                        # Skapa och initiera temp-DB
+                        temp_conn = duckdb.connect(temp_db_path)
+                        try:
+                            # Ladda extensions
+                            for ext in settings.DUCKDB_EXTENSIONS:
+                                try:
+                                    temp_conn.execute(f"INSTALL {ext}")
+                                    temp_conn.execute(f"LOAD {ext}")
+                                except Exception:
+                                    pass
+
+                            # Skapa scheman
+                            for schema in settings.DUCKDB_SCHEMAS:
+                                temp_conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+
+                            # Ladda parquet till raw
+                            temp_conn.execute(f"""
+                                CREATE OR REPLACE TABLE raw.{dataset_id} AS
+                                SELECT * FROM read_parquet('{parquet_path}')
+                            """)
+
+                            # Normalisera geometrikolumn
+                            self._normalize_geometry_column_in_conn(
+                                temp_conn, dataset_id
+                            )
+
+                            # Kör alla templates i ordning
+                            for template_name in templates:
+                                sql = generator.render_template(
+                                    template_name, dataset_id, ds_config
+                                )
+                                if sql:
+                                    temp_conn.execute(sql)
+
+                        finally:
+                            temp_conn.close()
+
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, do_transform)
+
+                    if on_event:
+                        on_event(PipelineEvent(
+                            event_type="dataset_completed",
+                            message=f"Klar: {dataset_id}",
+                            dataset=dataset_id,
+                            status="success",
+                        ))
+
+                    if on_log:
+                        on_log(f"  {dataset_id}: Transform OK")
+
+                    return (dataset_id, temp_db_path, True)
+
+                except Exception as e:
+                    if on_event:
+                        on_event(PipelineEvent(
+                            event_type="dataset_failed",
+                            message=f"Fel: {e}",
+                            dataset=dataset_id,
+                            status="error",
+                        ))
+                    if on_log:
+                        on_log(f"  {dataset_id}: FEL - {e}")
+                    return (dataset_id, temp_db_path, False)
+
+        # Kör alla datasets parallellt
+        tasks = [
+            process_dataset(dataset_id, parquet_path)
+            for dataset_id, parquet_path in parquet_files
+        ]
+        results = await asyncio.gather(*tasks)
+
+        success_count = sum(1 for r in results if r[2])
+        fail_count = sum(1 for r in results if not r[2])
+
+        if on_log:
+            on_log(f"Transform klar: {success_count} lyckade, {fail_count} misslyckade")
+
+        # Returnera lyckade temp-DBs för merge
+        return [(r[0], r[1]) for r in results if r[2]]
+
+    def _normalize_geometry_column_in_conn(
         self,
-        dataset_ids: list[str],
+        conn: duckdb.DuckDBPyConnection,
+        table_name: str,
+    ) -> None:
+        """Normalisera geometrikolumnens namn till 'geom' i given connection."""
+        alt_geom_names = ["geometry", "shape", "geometri"]
+
+        try:
+            result = conn.execute(f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'raw'
+                AND table_name = '{table_name}'
+                AND LOWER(column_name) = 'geom'
+            """).fetchone()
+
+            if result:
+                return
+
+            for alt_name in alt_geom_names:
+                result = conn.execute(f"""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'raw'
+                    AND table_name = '{table_name}'
+                    AND LOWER(column_name) = '{alt_name}'
+                """).fetchone()
+
+                if result:
+                    actual_col_name = result[0]
+                    conn.execute(f"""
+                        ALTER TABLE raw.{table_name}
+                        RENAME COLUMN "{actual_col_name}" TO geom
+                    """)
+                    return
+
+        except Exception:
+            pass
+
+    async def merge_databases(
+        self,
+        temp_dbs: list[tuple[str, str]],
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> bool:
-        """Kör hela transform-pipelinen med genererad SQL.
-
-        Steg:
-        1. Staging (raw → staging med H3 via SQL-makron)
-        2. Staging_2 (staging → staging_2 normalisering)
-        3. Mart (staging_2 → mart.h3_cells aggregering)
+        """Slå ihop temporära databaser till huvuddatabasen.
 
         Args:
-            dataset_ids: Lista med dataset-ID:n att processa
+            temp_dbs: Lista av (dataset_id, temp_db_path)
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
 
         Returns:
-            True om allt lyckades
+            True om alla mergades framgångsrikt
         """
+        if not temp_dbs:
+            return True
+
+        conn = self._get_connection()
         success = True
 
-        # Steg 1: Staging
         if on_log:
-            on_log("\n=== STEG 1: Staging ===")
-        staging_ok = await self.run_generated_staging(dataset_ids, on_log, on_event)
-        success = success and staging_ok
+            on_log(f"=== Merge: {len(temp_dbs)} databaser → warehouse ===")
 
-        # Steg 2: Staging_2
+        for i, (dataset_id, temp_db_path) in enumerate(temp_dbs):
+            if on_event:
+                on_event(PipelineEvent(
+                    event_type="progress",
+                    message=f"Merge {dataset_id}...",
+                    dataset=dataset_id,
+                    progress=(i + 1) / len(temp_dbs),
+                ))
+
+            try:
+                def do_merge():
+                    # Attach temp-DB
+                    conn.execute(f"ATTACH '{temp_db_path}' AS temp_db (READ_ONLY)")
+
+                    try:
+                        # Kopiera alla tabeller från alla scheman
+                        # Använd duckdb_tables() istället för information_schema
+                        # (information_schema fungerar inte för attached DBs)
+                        for schema in settings.DUCKDB_SCHEMAS:
+                            tables = conn.execute(f"""
+                                SELECT table_name
+                                FROM duckdb_tables()
+                                WHERE database_name = 'temp_db'
+                                AND schema_name = '{schema}'
+                            """).fetchall()
+
+                            for (table_name,) in tables:
+                                conn.execute(f"""
+                                    CREATE OR REPLACE TABLE {schema}.{table_name} AS
+                                    SELECT * FROM temp_db.{schema}.{table_name}
+                                """)
+                    finally:
+                        conn.execute("DETACH temp_db")
+
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, do_merge)
+
+                if on_log:
+                    on_log(f"  {dataset_id}: Merge OK")
+
+            except Exception as e:
+                if on_log:
+                    on_log(f"  {dataset_id}: Merge FEL - {e}")
+                success = False
+
+        # Rensa temp-filer
         if on_log:
-            on_log("\n=== STEG 2: Staging_2 ===")
-        staging_2_ok = await self.run_generated_staging_2(dataset_ids, on_log, on_event)
-        success = success and staging_2_ok
+            on_log("Rensar temporära databaser...")
+        settings.cleanup_temp_dbs()
 
-        # Steg 3: Mart (kör zzz_end SQL-filer + populera h3_cells)
+        return success
+
+    async def run_merged_sql(
+        self,
+        on_log: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Kör *_merged.sql filer efter att data slagits ihop.
+
+        Dessa filer kan innehålla aggregeringar över alla datasets,
+        t.ex. en samlad mart.h3_cells tabell.
+
+        Returns:
+            True om alla kördes framgångsrikt
+        """
+        conn = self._get_connection()
+        migrations_dir = self.sql_path / "migrations"
+
+        if not migrations_dir.exists():
+            return True
+
+        # Hitta alla *_merged.sql filer
+        merged_files = sorted(migrations_dir.glob("*_merged.sql"))
+
+        if not merged_files:
+            return True
+
         if on_log:
-            on_log("\n=== STEG 3: Mart ===")
+            on_log(f"=== Kör {len(merged_files)} merged SQL-filer ===")
 
-        # Kör mart SQL-filer (zzz_end)
-        mart_ok = await self.run_transforms(
-            dataset_ids=None,  # Kör bara zzz_end
-            folders=["mart"],
-            on_log=on_log,
-        )
-        success = success and mart_ok
+        success = True
+        for sql_file in merged_files:
+            if on_log:
+                on_log(f"  Kör {sql_file.name}...")
 
-        # Populera h3_cells
-        h3_ok = await self.populate_h3_cells(on_log)
-        success = success and h3_ok
+            try:
+                sql = sql_file.read_text()
 
-        if on_log:
-            status = "lyckades" if success else "misslyckades"
-            on_log(f"\n=== Transform-pipeline {status} ===")
+                def do_sql(sql_to_run=sql):
+                    conn.execute(sql_to_run)
+
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, do_sql)
+
+            except Exception as e:
+                if on_log:
+                    on_log(f"    FEL: {e}")
+                success = False
+
+        return success
+
+    async def run_static_sql(
+        self,
+        on_log: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Kör icke-template SQL-filer i sql/migrations/.
+
+        Hittar och kör alla SQL-filer som INTE är templates
+        och INTE är infrastruktur (001-003).
+
+        Returns:
+            True om alla kördes framgångsrikt
+        """
+        conn = self._get_connection()
+        migrations_dir = self.sql_path / "migrations"
+
+        if not migrations_dir.exists():
+            return True
+
+        success = True
+        for sql_file in sorted(migrations_dir.glob("*.sql")):
+            # Hoppa över templates
+            if "_template.sql" in sql_file.name:
+                continue
+
+            # Hoppa över infrastruktur (001-003)
+            if sql_file.name[:3] in ("001", "002", "003"):
+                continue
+
+            if on_log:
+                on_log(f"Kör {sql_file.name}...")
+
+            try:
+                sql = sql_file.read_text()
+
+                def do_sql(sql_to_run=sql):
+                    conn.execute(sql_to_run)
+
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, do_sql)
+
+            except Exception as e:
+                if on_log:
+                    on_log(f"  Fel i {sql_file.name}: {e}")
+                success = False
 
         return success
 
@@ -1009,34 +1207,104 @@ class MockPipelineRunner(PipelineRunner):
             on_log("[MOCK] Alla parquet-filer laddade")
         return True
 
-    async def run_staging(
+    async def run_templates(
         self,
         dataset_ids: list[str],
+        template_filter: str | None = None,
+        phase_name: str | None = None,
+        max_concurrent: int = 4,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> bool:
-        """Mock staging-transformationer."""
+        """Mock template-körning (parallell)."""
+        phase = phase_name or "Templates"
         if on_log:
-            on_log("[MOCK] === Kör staging-transformationer ===")
+            on_log(f"[MOCK] === Kör {phase} ({max_concurrent} parallella) ===")
 
-        for i, dataset_id in enumerate(dataset_ids):
-            if on_log:
-                on_log(f"[MOCK] Processar {dataset_id} till staging...")
-                on_log(f"[MOCK]   Geometrikolumn: geom")
-                on_log(f"[MOCK]   ID-kolumner: ['id', 'objektid']")
-                on_log(f"[MOCK]   Beräknar H3-index...")
-                on_log(f"[MOCK]   Skapade staging.{dataset_id} med 1234 rader")
+        semaphore = asyncio.Semaphore(max_concurrent)
+        completed = 0
+
+        async def process_one(dataset_id: str, index: int) -> None:
+            nonlocal completed
+            async with semaphore:
+                if on_log:
+                    on_log(f"[MOCK]   {dataset_id}: {phase} OK")
+                if on_event:
+                    on_event(PipelineEvent(
+                        event_type="progress",
+                        message=f"{phase} {dataset_id}...",
+                        dataset=dataset_id,
+                        progress=(index + 1) / len(dataset_ids),
+                    ))
+                await asyncio.sleep(0.05)
+                completed += 1
+
+        tasks = [process_one(ds_id, i) for i, ds_id in enumerate(dataset_ids)]
+        await asyncio.gather(*tasks)
+
+        if on_log:
+            on_log(f"[MOCK] {phase} klar: {len(dataset_ids)} lyckade, 0 misslyckade")
+        return True
+
+    async def run_parallel_transform(
+        self,
+        parquet_files: list[tuple[str, str]],
+        on_log: Callable[[str], None] | None = None,
+        on_event: Callable[[PipelineEvent], None] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Mock parallell transform."""
+        if on_log:
+            on_log(f"[MOCK] === Parallell transform: {len(parquet_files)} datasets ===")
+
+        results = []
+        for dataset_id, parquet_path in parquet_files:
+            if on_event:
+                on_event(PipelineEvent(
+                    event_type="dataset_started",
+                    message=f"Transform {dataset_id}",
+                    dataset=dataset_id,
+                ))
+
+            await asyncio.sleep(0.1)
 
             if on_event:
                 on_event(PipelineEvent(
-                    event_type="progress",
-                    message=f"Staging {dataset_id}...",
+                    event_type="dataset_completed",
+                    message=f"Klar: {dataset_id}",
                     dataset=dataset_id,
-                    progress=(i + 1) / len(dataset_ids),
+                    status="success",
                 ))
 
-            await asyncio.sleep(0.2)
+            if on_log:
+                on_log(f"[MOCK]   {dataset_id}: Transform OK")
 
+            results.append((dataset_id, f"data/temp/{dataset_id}.duckdb"))
+
+        return results
+
+    async def merge_databases(
+        self,
+        temp_dbs: list[tuple[str, str]],
+        on_log: Callable[[str], None] | None = None,
+        on_event: Callable[[PipelineEvent], None] | None = None,
+    ) -> bool:
+        """Mock merge."""
         if on_log:
-            on_log(f"[MOCK] Staging klar: {len(dataset_ids)} lyckade, 0 misslyckade")
+            on_log(f"[MOCK] === Merge: {len(temp_dbs)} databaser ===")
+
+        for dataset_id, _ in temp_dbs:
+            if on_log:
+                on_log(f"[MOCK]   {dataset_id}: Merge OK")
+            await asyncio.sleep(0.05)
+
+        return True
+
+    async def run_merged_sql(
+        self,
+        on_log: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Mock merged SQL."""
+        if on_log:
+            on_log("[MOCK] === Kör merged SQL ===")
+        await asyncio.sleep(0.1)
         return True

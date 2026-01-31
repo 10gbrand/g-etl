@@ -273,6 +273,7 @@ class MultiProgressWidget(Widget):
         current_items: int | None = None,
         error: str | None = None,
         rows_count: int | None = None,
+        queue_position: int | None = None,
     ) -> None:
         """Uppdatera en task."""
         if task_id not in self.tasks:
@@ -294,6 +295,8 @@ class MultiProgressWidget(Widget):
             task.error = error
         if rows_count is not None:
             task.rows_count = rows_count
+        if queue_position is not None:
+            task.queue_position = queue_position
 
         self.task_rows[task_id].update_task(task)
         self._update_total()

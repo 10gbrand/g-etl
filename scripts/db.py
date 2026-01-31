@@ -17,13 +17,13 @@ DEFAULT_SQL_PATH = "sql"
 def init_database(conn: duckdb.DuckDBPyConnection, sql_path: str = DEFAULT_SQL_PATH) -> None:
     """Initiera databas med extensions, scheman och makron.
 
-    Kör alla SQL-filer i sql/_init/ i alfabetisk ordning.
+    Kör alla SQL-filer i sql/migrations/ i alfabetisk ordning.
 
     Args:
         conn: DuckDB-anslutning
         sql_path: Sökväg till sql-mappen
     """
-    init_folder = Path(sql_path) / "_init"
+    init_folder = Path(sql_path) / "migrations"
     if not init_folder.exists():
         return
 

@@ -32,13 +32,8 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 
 **Database:**
 - `task db:cli` - Öppna DuckDB REPL
-- `task db:init` - Initiera databas med extensions (legacy)
-
-**Migrationer:**
-- `task db:migrate` - Kör alla väntande migrationer
+- `task db:migrate` - Kör alla migrationer
 - `task db:migrate:status` - Visa status för migrationer
-- `task db:migrate:rollback` - Rulla tillbaka senaste migreringen
-- `task db:migrate:create -- "namn"` - Skapa ny migrering
 
 **Admin TUI:**
 - `task admin:run` - Starta admin TUI
@@ -55,8 +50,34 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 ```text
 Admin TUI (Textual) → Pipeline Runner → Plugins → DuckDB
                                               ↓
-                                       SQL-transformationer
-                                       (staging/ → staging_2/ → mart/)
+                                       Parallell Transform
+                                       (temp-DB per dataset)
+                                              ↓
+                                       Merge → warehouse.duckdb
+                                              ↓
+                                       Post-merge SQL (*_merged.sql)
+```
+
+**Parallell Transform-arkitektur:**
+
+Varje dataset processas i en egen temporär DuckDB-fil för äkta parallelism:
+
+```text
+Extract (parallellt):
+├── dataset1 → parquet
+├── dataset2 → parquet
+└── dataset3 → parquet
+
+Transform (parallellt, en temp-DB per dataset):
+├── dataset1.duckdb: raw → staging → staging_2 → mart
+├── dataset2.duckdb: raw → staging → staging_2 → mart
+└── dataset3.duckdb: raw → staging → staging_2 → mart
+
+Merge:
+└── warehouse.duckdb ← alla temp-DBs
+
+Post-merge:
+└── Kör *_merged.sql (aggregeringar över alla datasets)
 ```
 
 **Dataflöde genom DuckDB-scheman:**
@@ -68,45 +89,88 @@ Admin TUI (Textual) → Pipeline Runner → Plugins → DuckDB
 **Nyckelkomponenter:**
 
 - `plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)
-- `sql/migrations/` - Versionerade databasmigrationer (up/down)
-- `sql/_init/` - Databas-initiering (legacy, ersätts av migrations)
-- `sql/staging/` - SQL för validering, metadata och H3-indexering
-- `sql/staging_2/` - SQL för normalisering till enhetlig struktur
-- `sql/mart/` - SQL för aggregering (zzz_end/01_end.sql skapar mart.h3_cells)
-- `scripts/migrations/` - Migreringsmotor och CLI
+- `sql/migrations/` - Alla SQL-filer (init + templates)
+- `scripts/sql_generator.py` - Genererar SQL från mallar + datasets.yml
 - `scripts/pipeline.py` - Pipeline-runner (CLI)
 - `scripts/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet)
 - `scripts/db.py` - Gemensamma databasverktyg
 - `scripts/admin/app.py` - Textual TUI-applikation
-- `scripts/admin/screens/migrations.py` - TUI för migrationshantering
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
-- `config/settings.py` - Centrala inställningar (H3-resolution, CRS, etc.)
+- `config/settings.py` - Centrala inställningar (H3-resolution, CRS, parallelism)
 
-**Migrationer (sql/migrations/):**
+**Auto-detekterad parallelism (settings.py):**
 
-SQL-baserat migreringssystem som fungerar med både DuckDB och PostgreSQL. Migrationer spåras i tabellen `_migrations`.
-
-Filformat:
-```sql
--- migrate:up
-CREATE SCHEMA raw;
-
--- migrate:down
-DROP SCHEMA raw CASCADE;
+```python
+MAX_CONCURRENT_EXTRACTS  # = cpu_count() för I/O-bound extract
+MAX_CONCURRENT_SQL       # = cpu_count() // 2 för CPU-bound SQL (DuckDB paralleliserar internt)
 ```
 
-Befintliga migrationer:
-- `001_extensions.sql` - Installerar DuckDB extensions (spatial, parquet, httpfs, json, h3)
-- `002_schemas.sql` - Skapar scheman (raw, staging, staging_2, mart)
-- `003_macros.sql` - Definierar återanvändbara SQL-makron
+**SQL-struktur:**
 
-**DuckDB-initiering (sql/_init/) [Legacy]:**
+Alla SQL-filer samlade i `sql/migrations/` med namnmönstret `{löpnr}_{beskrivning}_template.sql`:
 
-Körs automatiskt vid varje databasanslutning i alfabetisk ordning (ersätts successivt av migrationer):
+```text
+sql/migrations/
+├── 001_db_extensions.sql                    # Installerar DuckDB extensions (körs vid init)
+├── 002_db_schemas.sql                       # Skapar scheman (körs vid init)
+├── 003_db_makros.sql                        # SQL-makron (körs vid init)
+├── 004_staging_transform_template.sql       # Staging: validering, MD5, H3-index
+├── 005_staging2_normalisering_template.sql  # Staging_2: normaliserad struktur
+├── 006_mart_h3_cells_template.sql           # Mart: exploderade H3-celler med geometri
+└── 007_mart_compact_h3_cells_template.sql   # Mart: kompakterade H3-celler
+```
 
-- `01_extensions.sql` - Installerar och laddar extensions (spatial, parquet, httpfs, json, h3)
-- `02_schemas.sql` - Skapar scheman (raw, staging, staging_2, mart)
-- `03_macros.sql` - Definierar återanvändbara makron (validate_and_fix_geometry, etc.)
+**SQL-mallar (generiskt system):**
+
+Templates (`*_template.sql`) körs automatiskt per dataset med parametrar från `datasets.yml`.
+Pipeline-fasen bestäms av template-namnet:
+
+| Namnmönster               | Fas       | Beskrivning                                |
+| ------------------------- | --------- | ------------------------------------------ |
+| `*_staging_transform_*`   | Staging   | Validering, metadata, H3-indexering        |
+| `*_staging2_*`            | Staging_2 | Normalisering till enhetlig struktur       |
+| `*_mart_*`                | Mart      | Aggregerade tabeller, H3-exploderade celler|
+
+Nya templates plockas upp automatiskt utan kodändringar:
+
+```sql
+-- 008_mart_example_template.sql (fungerar automatiskt!)
+CREATE OR REPLACE TABLE mart.example_{{ dataset_id }} AS
+SELECT * FROM staging_2.{{ dataset_id }}
+WHERE '{{ klass }}' = 'naturreservat';
+```
+
+**Post-merge SQL (`*_merged.sql`):**
+
+Filer med suffix `_merged.sql` körs EFTER att alla datasets slagits ihop till warehouse.
+Använd detta för aggregeringar över alla datasets:
+
+```sql
+-- 100_all_h3_cells_merged.sql
+CREATE OR REPLACE TABLE mart.all_h3_cells AS
+SELECT * FROM mart.naturreservat
+UNION ALL SELECT * FROM mart.biotopskyddsomraden
+UNION ALL SELECT * FROM mart.vattenskyddsomraden;
+```
+
+**Tillgängliga variabler:**
+
+- `{{ dataset_id }}` - Dataset-ID
+- `{{ source_id_column }}` - Kolumn för käll-ID
+- `{{ klass }}`, `{{ leverantor }}` - Från field_mapping (literaler)
+- `{{ grupp_expr }}`, `{{ typ_expr }}` - SQL-uttryck (kolumnref eller literal)
+- `{{ h3_center_resolution }}`, `{{ h3_polyfill_resolution }}` - H3-inställningar
+
+**field_mapping syntax i datasets.yml:**
+
+```yaml
+field_mapping:
+  source_id_column: $beteckn   # $prefix = kolumnreferens
+  klass: biotopskydd           # utan prefix = literal sträng
+  grupp: $Biotyp               # $prefix = hämta från kolumn "Biotyp"
+  typ: skyddad_natur           # literal sträng "skyddad_natur"
+  leverantor: sks
+```
 
 ## Plugins
 

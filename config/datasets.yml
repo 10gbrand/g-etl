@@ -8,18 +8,16 @@
 #   - plugin: Plugin att använda (zip_geopackage, zip_shapefile, wfs, geoparquet)
 #   - url: URL eller sökväg till data
 #   - enabled: true/false
-#   - staging: Konfiguration för staging-steget
-#     - source_id_column: Kolumn att använda som käll-ID (för _source_id_md5)
-#   - staging_2: Konfiguration för staging_2-steget (normalisering)
-#     - klass: Klassificering (t.ex. biotopskydd, naturreservat)
-#     - grupp: Undergrupp (valfritt, kan vara kolumnnamn)
-#     - typ: Typ (valfritt, kan vara kolumnnamn)
-#     - leverantor: Dataleverantör (sks, nvv, sgu)
-#     - source_id_column: Kolumn för source_id (om tom, ingen source_id)
-# https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
-# https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
-# https://wms.slu.se/silvaboreal/esf/ows
-# https://ext-dokument.lansstyrelsen.se/gemensamt/geodata/ShapeExport/LST_jaktadm_ajo_afo.zip
+#   - field_mapping: Fältmappning för staging och normalisering
+#     - source_id_column: $kolumnnamn (kolumnreferens med $-prefix)
+#     - klass: Klassificering (literal sträng)
+#     - grupp: Undergrupp (literal eller $kolumn)
+#     - typ: Typ (literal eller $kolumn)
+#     - leverantor: Dataleverantör (literal sträng)
+#
+# Syntax:
+#   $kolumnnamn = kolumnreferens (hämtar värde från kolumn i data)
+#   värde       = literal sträng
 
 datasets:
   # ============================================================================
@@ -33,12 +31,10 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksAvverkAnm_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: beteckn
-    staging_2:
+    field_mapping:
+      source_id_column: $beteckn
       klass: avverkningsanmalan
       leverantor: sks
-      source_id_column: beteckn
 
   - id: sksbiotopskydd
     name: sksbiotopskydd
@@ -47,14 +43,12 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
+      source_id_column: $beteckn
       klass: biotopskydd
-      grupp: Biotyp # Kolumnreferens
-      typ: Naturtyp # Kolumnreferens
+      grupp: $Biotyp
+      typ: $Naturtyp
       leverantor: sks
-      source_id_column: beteckn
 
   - id: sksdodagranar
     name: sksDodaGranar
@@ -63,9 +57,7 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
     enabled: false
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: dodagranar
       leverantor: sks
 
@@ -76,9 +68,8 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNaturvardsavtal_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: beteckn
-    staging_2:
+    field_mapping:
+      source_id_column: $beteckn
       klass: naturvardsavtal
       leverantor: sks
 
@@ -89,9 +80,8 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: uuid
-    staging_2:
+    field_mapping:
+      source_id_column: $uuid
       klass: biotopskydd
       leverantor: sks
 
@@ -102,9 +92,8 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNyckelbiotoper_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: beteckn
-    staging_2:
+    field_mapping:
+      source_id_column: $beteckn
       klass: nyckelbiotop
       leverantor: sks
 
@@ -115,9 +104,8 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksStorskogsbrNyckelb_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
+      source_id_column: $objectid
       klass: nyckelbiotop
       leverantor: sks
 
@@ -128,9 +116,8 @@ datasets:
     plugin: zip_geopackage
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSumpskogar_gpkg.zip
     enabled: true
-    staging:
-      source_id_column: kartid2
-    staging_2:
+    field_mapping:
+      source_id_column: $kartid2
       klass: sumpskog
       leverantor: sks
 
@@ -143,9 +130,7 @@ datasets:
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksUtfordAvverkning_gpkg.zip
     enabled: false
     status: källan finns ej
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: utford_avverkning
       leverantor: sks
 
@@ -157,9 +142,7 @@ datasets:
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogMedHogaNaturvarden_gpkg.zip
     enabled: false
     status: källan finns ej
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: smhn
       leverantor: sks
 
@@ -171,9 +154,7 @@ datasets:
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksFrotaktsomraden_gpkg.zip
     enabled: false
     status: källan finns ej
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: frotaktsomrade
       leverantor: sks
 
@@ -185,9 +166,7 @@ datasets:
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogshistoriskKarta_gpkg.zip
     enabled: false
     status: källan finns ej
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: skogshistorisk
       leverantor: sks
 
@@ -202,9 +181,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NP.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: nationalpark
       leverantor: nvv
 
@@ -215,9 +193,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NR.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: naturreservat
       leverantor: nvv
 
@@ -228,9 +205,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $SITE_CODE
       klass: natura2000_sci
       leverantor: nvv
 
@@ -241,9 +217,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $SITE_CODE
       klass: natura2000_spa
       leverantor: nvv
 
@@ -254,9 +229,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVA.zip
     enabled: true
-    staging:
-      source_id_column: geodb_oid
-    staging_2:
+    field_mapping:
+      source_id_column: $geodb_oid
       klass: naturvardsavtal
       leverantor: nvv
 
@@ -267,9 +241,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/OBO.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: biotopskydd
       leverantor: nvv
 
@@ -280,9 +253,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/VSO.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: vso
       leverantor: nvv
 
@@ -293,9 +265,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVO.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: naturvardsomrade
       leverantor: nvv
 
@@ -306,9 +277,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/KR.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: kulturreservat
       leverantor: nvv
 
@@ -319,9 +289,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
     enabled: true
-    staging:
-      source_id_column: NVRID
-    staging_2:
+    field_mapping:
+      source_id_column: $NVRID
       klass: naturminne
       leverantor: nvv
 
@@ -332,9 +301,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/Ramsar_2018.zip
     enabled: true
-    staging:
-      source_id_column: RAMSAR_ID
-    staging_2:
+    field_mapping:
+      source_id_column: $RAMSAR_ID
       klass: ramsar
       leverantor: nvv
 
@@ -345,9 +313,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/Skog/Skyddsvarda_statliga_skogar.zip
     enabled: true
-    staging:
-      source_id_column: OBJECTID
-    staging_2:
+    field_mapping:
+      source_id_column: $ID
       klass: skyddsvard_statlig_skog
       leverantor: nvv
 
@@ -358,9 +325,8 @@ datasets:
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/Skog/analys_nationellt.zip
     enabled: false
-    staging:
-      source_id_column: OBJECTID
-    staging_2:
+    field_mapping:
+      source_id_column: $OBJECTID
       klass: vardekarna
       leverantor: nvv
 
@@ -375,9 +341,8 @@ datasets:
     plugin: zip_geopackage
     url: https://resource.sgu.se/data/oppnadata/jordarter25k-100k/jordarter25k-100k.zip
     enabled: false
-    staging:
-      source_id_column: fid
-    staging_2:
+    field_mapping:
+      source_id_column: $fid
       klass: jordart
       leverantor: sgu
 
@@ -388,9 +353,8 @@ datasets:
     plugin: zip_geopackage
     url: https://resource.sgu.se/data/oppnadata/torvlagerfoljder/torvlagerfoljder.zip
     enabled: true
-    staging:
-      source_id_column: id
-    staging_2:
+    field_mapping:
+      source_id_column: $id
       klass: torvlagerfoljd
       leverantor: sgu
 
@@ -405,9 +369,7 @@ datasets:
     plugin: wfs
     url: http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows
     enabled: false
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: vardefullavatten
       leverantor: hav
 
@@ -418,9 +380,7 @@ datasets:
     plugin: wfs
     url: https://wms.slu.se/silvaboreal/esf/ows
     enabled: false
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: forsok
       leverantor: slu
 
@@ -432,9 +392,7 @@ datasets:
     url: https://geodata.naturvardsverket.se/nedladdning/diken/Dikningsforetagskartan.zip
     enabled: false
     status: källan finns ej
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: dikningsforetag
       leverantor: nvv
 
@@ -450,8 +408,6 @@ datasets:
     url: /Volumes/T9/spring/GISS.gpkg.zip
     layer: GAVD
     enabled: false
-    staging:
-      source_id_column: objectid
-    staging_2:
+    field_mapping:
       klass: giss
       leverantor: intern

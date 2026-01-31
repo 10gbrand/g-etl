@@ -129,7 +129,7 @@ class Pipeline:
         return self._conn
 
     def _init_database(self, on_log: Callable[[str], None] | None = None):
-        """Initiera databas med extensions, scheman och makron från sql/_init/."""
+        """Initiera databas med extensions, scheman och makron från sql/migrations/."""
         conn = self._conn
         if conn is None:
             return
@@ -140,7 +140,7 @@ class Pipeline:
             else:
                 print(msg)
 
-        init_folder = self.sql_path / "_init"
+        init_folder = self.sql_path / "migrations"
         if not init_folder.exists():
             log(f"[Init] Varning: Mappen {init_folder} finns inte")
             return

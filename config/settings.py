@@ -4,7 +4,13 @@ Alla konfigurerbara värden samlas här för enkel justering.
 Importera med: from config.settings import settings
 """
 
+import os
 from pathlib import Path
+
+
+def _cpu_count() -> int:
+    """Hämta antal CPU-kärnor med fallback."""
+    return os.cpu_count() or 4
 
 
 class Settings:
@@ -13,6 +19,7 @@ class Settings:
     # === Sökvägar ===
     DATA_DIR: Path = Path("data")
     RAW_DIR: Path = Path("data/raw")
+    TEMP_DIR: Path = Path("data/temp")  # Temporära per-dataset DBs
     LOGS_DIR: Path = Path("logs")
     SQL_DIR: Path = Path("sql")
     SQL_INIT_DIR: Path = Path("sql/_init")
@@ -31,7 +38,9 @@ class Settings:
     H3_POLYFILL_RESOLUTION: int = 11  # För _h3_cells (polyfill)
 
     # === Pipeline ===
-    MAX_CONCURRENT_EXTRACTS: int = 4  # Max parallella nedladdningar
+    # Auto-detekterade baserat på CPU-kärnor
+    MAX_CONCURRENT_EXTRACTS: int = _cpu_count()  # I/O-bound: använd alla kärnor
+    MAX_CONCURRENT_SQL: int = max(2, _cpu_count() // 2)  # CPU-bound: halva (DuckDB paralleliserar internt)
     EXTRACT_TIMEOUT_SECONDS: int = 300  # Timeout per dataset
 
     # === Koordinatsystem ===
@@ -72,8 +81,22 @@ class Settings:
 
     def ensure_dirs(self) -> None:
         """Skapa alla nödvändiga kataloger."""
-        for dir_path in [self.DATA_DIR, self.RAW_DIR, self.LOGS_DIR]:
+        for dir_path in [self.DATA_DIR, self.RAW_DIR, self.TEMP_DIR, self.LOGS_DIR]:
             dir_path.mkdir(parents=True, exist_ok=True)
+
+    def get_temp_db_path(self, dataset_id: str) -> Path:
+        """Generera sökväg för temporär per-dataset databas."""
+        self.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        return self.TEMP_DIR / f"{dataset_id}.duckdb"
+
+    def cleanup_temp_dbs(self) -> None:
+        """Ta bort temporära databasfiler."""
+        if self.TEMP_DIR.exists():
+            for db_file in self.TEMP_DIR.glob("*.duckdb"):
+                try:
+                    db_file.unlink()
+                except OSError:
+                    pass  # Ignorera om filen är låst
 
 
 # Singleton-instans
