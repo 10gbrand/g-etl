@@ -101,6 +101,198 @@
         }
       }
     },
+    "kitty@latest": {
+      "last_modified": "2026-01-25T08:36:19Z",
+      "resolved": "github:NixOS/nixpkgs/48698d12cc10555a4f3e3222d9c669b884a49dfe#kitty",
+      "source": "devbox-search",
+      "version": "0.45.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/p6y3psii5v6sz0xcm5dzlwf3mgwlbzga-kitty-0.45.0",
+              "default": true
+            },
+            {
+              "name": "kitten",
+              "path": "/nix/store/b789vlcxwiyn8shm1q4wn8hmhnnsrv4a-kitty-0.45.0-kitten"
+            },
+            {
+              "name": "shell_integration",
+              "path": "/nix/store/22pa5dcfgfaa95wbl12acd5x1g896j80-kitty-0.45.0-shell_integration"
+            },
+            {
+              "name": "terminfo",
+              "path": "/nix/store/nlqwxsdykm6hy3hga46qzdw970960vha-kitty-0.45.0-terminfo"
+            }
+          ],
+          "store_path": "/nix/store/p6y3psii5v6sz0xcm5dzlwf3mgwlbzga-kitty-0.45.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r6hr0qjcg123yihqmb812diza27951x4-kitty-0.45.0",
+              "default": true
+            },
+            {
+              "name": "terminfo",
+              "path": "/nix/store/cyfz69k2vaw78nl08i05qijmgw8p4x0z-kitty-0.45.0-terminfo"
+            },
+            {
+              "name": "kitten",
+              "path": "/nix/store/6dkw4793rsy4cl7nx2cmvm0jqyvfb3vv-kitty-0.45.0-kitten"
+            },
+            {
+              "name": "shell_integration",
+              "path": "/nix/store/7n4nc8xls62gk3gdpd1k5mqkw5kp6bv6-kitty-0.45.0-shell_integration"
+            }
+          ],
+          "store_path": "/nix/store/r6hr0qjcg123yihqmb812diza27951x4-kitty-0.45.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/azm34x6zp6vwxwxn180xbpnfdy74njrd-kitty-0.45.0",
+              "default": true
+            },
+            {
+              "name": "shell_integration",
+              "path": "/nix/store/rvpmrmmkmpjc9g65dk749mqscrdhh0sf-kitty-0.45.0-shell_integration"
+            },
+            {
+              "name": "terminfo",
+              "path": "/nix/store/iv043hqcyqfh423bm6i6miwfcr2c59w9-kitty-0.45.0-terminfo"
+            },
+            {
+              "name": "kitten",
+              "path": "/nix/store/6iplhbyra8z2xpfd0rk5a5ij4n8zgwnk-kitty-0.45.0-kitten"
+            }
+          ],
+          "store_path": "/nix/store/azm34x6zp6vwxwxn180xbpnfdy74njrd-kitty-0.45.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/233pz1cf33xw8m5yyigp1iq70b8an4fm-kitty-0.45.0",
+              "default": true
+            },
+            {
+              "name": "kitten",
+              "path": "/nix/store/fdkbxg76nciqhywd4806vjfhbvr4w42c-kitty-0.45.0-kitten"
+            },
+            {
+              "name": "shell_integration",
+              "path": "/nix/store/z5anlsjrl6z7kphwzhgzl0vj37prj8md-kitty-0.45.0-shell_integration"
+            },
+            {
+              "name": "terminfo",
+              "path": "/nix/store/4rv69091m38qrhi517f1sgv3y48c3rir-kitty-0.45.0-terminfo"
+            }
+          ],
+          "store_path": "/nix/store/233pz1cf33xw8m5yyigp1iq70b8an4fm-kitty-0.45.0"
+        }
+      }
+    },
+    "nerdfonts@latest": {
+      "last_modified": "2024-11-16T04:25:12Z",
+      "resolved": "github:NixOS/nixpkgs/34a626458d686f1b58139620a8b2793e9e123bba#nerdfonts",
+      "source": "devbox-search",
+      "version": "3.2.1",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/kjp1v736v5adydkwfh1wy5m71v7y02ww-nerdfonts-3.2.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/kjp1v736v5adydkwfh1wy5m71v7y02ww-nerdfonts-3.2.1"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/cw6dv2xzf2gq2d4n558jd76mspwqmlkw-nerdfonts-3.2.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/cw6dv2xzf2gq2d4n558jd76mspwqmlkw-nerdfonts-3.2.1"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r6r5vzi72a5vx8b3lhl1aq9hma99m2b1-nerdfonts-3.2.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/r6r5vzi72a5vx8b3lhl1aq9hma99m2b1-nerdfonts-3.2.1"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/c8z07qzzpg17vg0chvfz56gkj48frhww-nerdfonts-3.2.1",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/c8z07qzzpg17vg0chvfz56gkj48frhww-nerdfonts-3.2.1"
+        }
+      }
+    },
+    "superfile@latest": {
+      "last_modified": "2026-01-23T17:20:52Z",
+      "resolved": "github:NixOS/nixpkgs/a1bab9e494f5f4939442a57a58d0449a109593fe#superfile",
+      "source": "devbox-search",
+      "version": "1.3.3",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/9qff91085lcjaazhw7w18b2y9f6k67ln-superfile-1.3.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/9qff91085lcjaazhw7w18b2y9f6k67ln-superfile-1.3.3"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/nlcxavvzq1ak10x4dcnz49vr4v93hrdh-superfile-1.3.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/nlcxavvzq1ak10x4dcnz49vr4v93hrdh-superfile-1.3.3"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ix73dammmvjs19d9ajcvywxb19rsgphi-superfile-1.3.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ix73dammmvjs19d9ajcvywxb19rsgphi-superfile-1.3.3"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/9nbzsr5xy9wkdmxf6cvyjj0692mr3mlz-superfile-1.3.3",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/9nbzsr5xy9wkdmxf6cvyjj0692mr3mlz-superfile-1.3.3"
+        }
+      }
+    },
     "tree@latest": {
       "last_modified": "2026-01-23T17:20:52Z",
       "resolved": "github:NixOS/nixpkgs/a1bab9e494f5f4939442a57a58d0449a109593fe#tree",

@@ -567,70 +567,78 @@ class PipelineScreen(Screen):
             if skipped_datasets:
                 self.log_message(f"Använder {len(skipped_parquet_files)} befintliga parquet-filer")
 
-            # Ladda parquet till DuckDB
-            if all_parquet_files:
-                progress.set_phase("Load → raw")
-                self.log_message(f"Laddar {len(all_parquet_files)} parquet-filer till databas...")
-
-                await self.runner.load_parquet_to_db(
-                    parquet_files=all_parquet_files,
-                    on_log=lambda msg: self.log_message(msg),
-                )
-
                 loaded_ids = [ds_id for ds_id, _ in all_parquet_files]
         else:
             self.log_message("Hoppar över Extract-fasen")
 
-        # === FAS 2: STAGING (SQL) ===
-        # H3-index beräknas direkt i SQL via DuckDB H3 extension
-        if run_staging and self._running and loaded_ids:
-            progress.set_phase("2. Staging SQL + H3")
-            self.log_message("Kör staging SQL (validering, MD5, centroids, H3)...")
-            progress.set_status("Skapar staging-tabeller med H3-index...")
+        # === FAS 2: PARALLELL TRANSFORM ===
+        # Kör alla templates (staging, staging_2, mart) parallellt per dataset
+        # med separata temp-DBs för äkta parallelism
+        run_any_sql = run_staging or run_staging2 or run_mart
+        if run_any_sql and self._running and all_parquet_files:
+            progress.set_phase("2. Parallell Transform")
 
-            await self.runner.run_transforms(
-                dataset_ids=loaded_ids,
-                folders=["staging"],
+            # Reset progress för transform-fasen
+            for i, (ds_id, _) in enumerate(all_parquet_files):
+                progress.update_task(
+                    ds_id,
+                    status=TaskStatus.QUEUED,
+                    progress=0.0,
+                    message="Väntar på transform...",
+                    queue_position=i + 1,
+                )
+
+            def on_transform_event(event) -> None:
+                if event.event_type == "dataset_started" and event.dataset:
+                    progress.update_task(
+                        event.dataset,
+                        status=TaskStatus.RUNNING,
+                        progress=0.2,
+                        message="Transform...",
+                    )
+                elif event.event_type == "dataset_completed" and event.dataset:
+                    progress.update_task(
+                        event.dataset,
+                        status=TaskStatus.COMPLETED,
+                        progress=1.0,
+                        message="Transform klar",
+                    )
+                elif event.event_type == "dataset_failed" and event.dataset:
+                    progress.update_task(
+                        event.dataset,
+                        status=TaskStatus.FAILED,
+                        progress=0.0,
+                        message=event.message or "Fel",
+                    )
+
+            # Kör parallell transform (raw → staging → staging_2 → mart per dataset)
+            temp_dbs = await self.runner.run_parallel_transform(
+                parquet_files=all_parquet_files,
                 on_log=lambda msg: self.log_message(msg),
-            )
-        elif not run_staging:
-            self.log_message("Hoppar över Staging-fasen")
-
-        # === FAS 3: STAGING_2 (SQL) ===
-        # Normaliserade tabeller med enhetlig struktur
-        if run_staging2 and self._running and loaded_ids:
-            progress.set_phase("3. Staging_2 SQL")
-            self.log_message("Kör staging_2 SQL (normalisering)...")
-            progress.set_status("Skapar normaliserade tabeller...")
-
-            await self.runner.run_transforms(
-                dataset_ids=loaded_ids,
-                folders=["staging_2"],
-                on_log=lambda msg: self.log_message(msg),
-            )
-        elif not run_staging2:
-            self.log_message("Hoppar över Staging_2-fasen")
-
-        # === FAS 4: MART (SQL + dynamisk H3-aggregering) ===
-        if run_mart and self._running:
-            progress.set_phase("4. Mart SQL")
-            self.log_message("Kör mart SQL-transformationer...")
-            progress.set_status("Skapar aggregerade tabeller...")
-
-            # Kör mart SQL-filer (skapar tom mart.h3_cells)
-            await self.runner.run_transforms(
-                dataset_ids=loaded_ids,
-                folders=["mart"],
-                on_log=lambda msg: self.log_message(msg)
+                on_event=on_transform_event,
             )
 
-            # Populera mart.h3_cells dynamiskt från staging_2
-            self.log_message("Populerar mart.h3_cells från staging_2...")
-            await self.runner.populate_h3_cells(
-                on_log=lambda msg: self.log_message(msg)
-            )
-        elif not run_mart:
-            self.log_message("Hoppar över Mart-fasen")
+            # === FAS 3: MERGE ===
+            # Slå ihop temp-DBs till warehouse
+            if temp_dbs and self._running:
+                progress.set_phase("3. Merge → warehouse")
+                self.log_message(f"Slår ihop {len(temp_dbs)} databaser...")
+
+                await self.runner.merge_databases(
+                    temp_dbs=temp_dbs,
+                    on_log=lambda msg: self.log_message(msg),
+                )
+
+            # === FAS 4: POST-MERGE SQL ===
+            # Kör *_merged.sql för aggregeringar över alla datasets
+            if self._running:
+                progress.set_phase("4. Post-merge SQL")
+                await self.runner.run_merged_sql(
+                    on_log=lambda msg: self.log_message(msg),
+                )
+
+        elif not run_any_sql:
+            self.log_message("Hoppar över SQL-faserna")
 
         # Uppdatera den fasta warehouse.duckdb med senaste körningen
         from scripts.admin.services.db_session import update_current_db

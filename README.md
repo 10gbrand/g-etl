@@ -6,42 +6,51 @@ En ETL-stack för svenska geodata med DuckDB som analytisk motor, H3 spatial ind
 
 ```mermaid
 flowchart TB
-    subgraph Extract["1. EXTRACT (Plugins)"]
+    subgraph Extract["1. EXTRACT (Parallellt)"]
         direction LR
-        A1[zip_geopackage] --> R[(raw.*)]
-        A2[zip_shapefile] --> R
-        A3[wfs] --> R
-        A4[geoparquet] --> R
-        A5[lantmateriet] --> R
-        A6[mssql] --> R
+        A1[zip_geopackage] --> P1[(parquet)]
+        A2[zip_shapefile] --> P2[(parquet)]
+        A3[geoparquet] --> P3[(parquet)]
     end
 
-    subgraph Staging["2. STAGING (SQL + H3)"]
+    subgraph Transform["2. PARALLELL TRANSFORM (temp-DB per dataset)"]
         direction TB
-        R --> S1["migrations/004<br/>staging_procedure.sql<br/>(makron)"]
-        S1 --> S2["SQLGenerator<br/>staging_sql()<br/>(genererad SQL)"]
-        S2 --> ST[(staging.* med H3)]
+        P1 --> T1["dataset1.duckdb<br/>raw→staging→staging_2→mart"]
+        P2 --> T2["dataset2.duckdb<br/>raw→staging→staging_2→mart"]
+        P3 --> T3["dataset3.duckdb<br/>raw→staging→staging_2→mart"]
     end
 
-    subgraph Staging2["3. STAGING_2 (Normalisering)"]
+    subgraph Merge["3. MERGE"]
         direction TB
-        ST --> M2["SQLGenerator<br/>staging2_sql()<br/>(genererad SQL)"]
-        M2 --> ST2[(staging_2.*)]
+        T1 --> W[(warehouse.duckdb)]
+        T2 --> W
+        T3 --> W
     end
 
-    subgraph Mart["4. MART (Aggregering)"]
+    subgraph PostMerge["4. POST-MERGE SQL"]
         direction TB
-        ST2 --> M3["sql/mart/zzz_end/<br/>01_end.sql"]
-        M3 --> MF[(mart.h3_cells)]
+        W --> PM["*_merged.sql<br/>(aggregeringar)"]
+        PM --> WF[(mart.all_h3_cells)]
     end
 
-    Extract --> Staging --> Staging2 --> Mart
+    Extract --> Transform --> Merge --> PostMerge
 
     style Extract fill:#e1f5fe
-    style Staging fill:#fff3e0
-    style Staging2 fill:#fce4ec
-    style Mart fill:#e8f5e9
+    style Transform fill:#fff3e0
+    style Merge fill:#fce4ec
+    style PostMerge fill:#e8f5e9
 ```
+
+### Parallell arkitektur
+
+Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelism utan fillåsning:
+
+| Fas        | Parallelism        | Beskrivning                              |
+| ---------- | ------------------ | ---------------------------------------- |
+| Extract    | `cpu_count()`      | I/O-bound, alla kärnor                   |
+| Transform  | `cpu_count() // 2` | CPU-bound, DuckDB paralleliserar internt |
+| Merge      | Sekventiell        | Kombinerar temp-DBs                      |
+| Post-merge | Sekventiell        | Aggregeringar över alla datasets         |
 
 ## Detaljerat pipeline-flöde
 
@@ -127,25 +136,45 @@ Aggregerar alla dataset till en gemensam H3-tabell.
 
 ## Transform-pipeline
 
-Transformationer körs i följande ordning:
+Transformationer körs parallellt med separata temp-databaser per dataset:
 
 ```
-1. Migrationer (task db:migrate)
-   └── sql/migrations/004_staging_procedure.sql   ← Installerar makron
+1. Extract (parallellt)
+   └── Plugins → parquet-filer (en per dataset)
 
-2. Staging (genererad SQL per dataset)
-   └── SQLGenerator.staging_sql(dataset_id, config)
-       - Läser config från datasets.yml staging:
-       - Genererar och kör CREATE TABLE staging.{dataset}
+2. Parallell Transform (temp-DB per dataset)
+   ├── dataset1.duckdb ──┐
+   ├── dataset2.duckdb ──┼── Kör alla templates: 004→005→006→007
+   └── dataset3.duckdb ──┘
 
-3. Staging_2 (genererad SQL per dataset)
-   └── SQLGenerator.staging2_sql(dataset_id, config)
-       - Läser config från datasets.yml staging_2:
-       - Genererar och kör CREATE TABLE staging_2.{dataset}
+3. Merge
+   └── Kombinera alla temp-DBs → warehouse.duckdb
 
-4. Mart (SQL-filer + dynamisk populering)
-   └── sql/mart/zzz_end/01_end.sql               ← Skapar mart.h3_cells struktur
-   └── pipeline_runner.populate_h3_cells()        ← Populerar från staging_2.*
+4. Post-merge SQL
+   └── sql/migrations/*_merged.sql → Aggregeringar över alla datasets
+```
+
+### SQL-templates
+
+Templates (`*_template.sql`) körs automatiskt per dataset:
+
+| Fil                                       | Fas       | Beskrivning               |
+| ----------------------------------------- | --------- | ------------------------- |
+| `004_staging_transform_template.sql`      | Staging   | Validering, MD5, H3-index |
+| `005_staging2_normalisering_template.sql` | Staging_2 | Normaliserad struktur     |
+| `006_mart_h3_cells_template.sql`          | Mart      | Exploderade H3-celler     |
+| `007_mart_compact_h3_cells_template.sql`  | Mart      | Kompakterade H3-celler    |
+
+### Post-merge SQL (`*_merged.sql`)
+
+Filer med suffix `_merged.sql` körs EFTER merge för aggregeringar:
+
+```sql
+-- sql/migrations/100_all_h3_cells_merged.sql
+CREATE OR REPLACE TABLE mart.all_h3_cells AS
+SELECT * FROM mart.naturreservat
+UNION ALL SELECT * FROM mart.biotopskyddsomraden
+UNION ALL SELECT * FROM mart.vattenskyddsomraden;
 ```
 
 ## DuckDB-scheman
@@ -163,44 +192,39 @@ Transformationer körs i följande ordning:
 g-etl/
 ├── config/
 │   ├── datasets.yml       # Dataset-konfiguration
-│   └── settings.py        # Centrala inställningar (H3, CRS, etc.)
+│   └── settings.py        # Inställningar (H3, CRS, parallelism)
 ├── plugins/               # Datakälla-plugins
 │   ├── base.py            # Basklass för plugins
-│   ├── zip_geopackage.py  # Zippad GeoPackage (URL/lokal)
+│   ├── zip_geopackage.py  # Zippad GeoPackage
 │   ├── zip_shapefile.py   # Zippad Shapefile
 │   ├── wfs.py             # OGC WFS-tjänster
 │   ├── geoparquet.py      # GeoParquet-filer
 │   ├── lantmateriet.py    # Lantmäteriets API
 │   └── mssql.py           # Microsoft SQL Server
 ├── sql/
-│   ├── migrations/        # Versionerade databasmigrationer
-│   │   ├── 001_extensions.sql
-│   │   ├── 002_schemas.sql
-│   │   └── 003_macros.sql
-│   ├── _init/             # Databas-initiering (legacy)
-│   ├── staging/           # Staging SQL per dataset
-│   │   ├── _common/       # Gemensamma makron
-│   │   └── {dataset}/     # Dataset-specifik SQL
-│   ├── staging_2/         # Normalisering per dataset
-│   │   ├── _common/       # Gemensamma funktioner
-│   │   └── {dataset}/     # Dataset-specifik SQL
-│   └── mart/              # Aggregering
-│       └── zzz_end/       # Slutskript (körs sist)
+│   └── migrations/        # Alla SQL-filer
+│       ├── 001_db_extensions.sql           # Init: extensions
+│       ├── 002_db_schemas.sql              # Init: scheman
+│       ├── 003_db_makros.sql               # Init: makron
+│       ├── 004_staging_transform_template.sql    # Template: staging
+│       ├── 005_staging2_normalisering_template.sql # Template: staging_2
+│       ├── 006_mart_h3_cells_template.sql        # Template: mart
+│       ├── 007_mart_compact_h3_cells_template.sql # Template: mart
+│       └── 100_*_merged.sql                # Post-merge aggregeringar
 ├── scripts/
-│   ├── migrations/        # Migreringsmotor
-│   │   ├── migrator.py    # Core migreringslogik
-│   │   └── cli.py         # CLI för migrationer
+│   ├── sql_generator.py   # Genererar SQL från templates
 │   ├── admin/             # Textual TUI-applikation
 │   │   ├── screens/
 │   │   │   ├── pipeline.py     # Pipeline-körning
-│   │   │   ├── explorer.py     # Data-utforskare
-│   │   │   └── migrations.py   # Migrationshantering
+│   │   │   └── explorer.py     # Data-utforskare
 │   │   └── services/
-│   │       ├── pipeline_runner.py    # Pipeline-körare
-│   │       └── staging_processor.py  # Staging-processor
+│   │       └── pipeline_runner.py  # Parallell pipeline-körare
 │   ├── pipeline.py        # CLI pipeline-runner
 │   └── export_h3.py       # Export av H3-data
-├── data/                  # DuckDB-databaser
+├── data/
+│   ├── raw/               # Parquet-filer från extract
+│   ├── temp/              # Temporära per-dataset DBs
+│   └── warehouse.duckdb   # Slutlig databas
 └── logs/                  # Pipeline-loggar
 ```
 
@@ -376,6 +400,17 @@ Projektet använder [H3](https://h3geo.org/) för spatial indexering:
 | `H3_POLYFILL_RESOLUTION` | 11 | ~2149 m² (polyfill) |
 
 H3-celler möjliggör snabba spatial joins och aggregeringar utan geometriberäkningar.
+
+## Parallelism
+
+Parallelliteten auto-detekteras baserat på antal CPU-kärnor (`config/settings.py`):
+
+```python
+MAX_CONCURRENT_EXTRACTS = cpu_count()      # I/O-bound: alla kärnor
+MAX_CONCURRENT_SQL = cpu_count() // 2      # CPU-bound: halva (DuckDB paralleliserar internt)
+```
+
+Temporära databaser sparas i `data/temp/` och rensas automatiskt efter merge.
 
 ## Koordinatsystem
 

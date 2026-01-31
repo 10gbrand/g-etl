@@ -4,7 +4,10 @@
     "go-task@latest",
     "tree@latest",
     "claude-code@latest",
-    "uv@latest"
+    "uv@latest",
+    "kitty@latest",
+    "superfile@latest",
+    "nerdfonts@latest"
   ],
   "shell": {
     "init_hook": [

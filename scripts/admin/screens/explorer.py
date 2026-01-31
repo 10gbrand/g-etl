@@ -4,7 +4,7 @@ import duckdb
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import (
     DataTable,
@@ -27,9 +27,6 @@ class TableInfo(Static):
     DEFAULT_CSS = """
     TableInfo {
         height: auto;
-        padding: 1;
-        border: solid $secondary;
-        margin-bottom: 1;
     }
     """
 
@@ -67,10 +64,8 @@ class TableInfo(Static):
             "",
             "Kolumner:",
         ]
-        for col_name, col_type in self.columns[:10]:  # Max 10 kolumner
+        for col_name, col_type in self.columns:
             lines.append(f"  • {col_name} ({col_type})")
-        if len(self.columns) > 10:
-            lines.append(f"  ... +{len(self.columns) - 10} till")
 
         return "\n".join(lines)
 
@@ -89,7 +84,7 @@ class ExplorerScreen(Screen):
     ExplorerScreen {
         layout: grid;
         grid-size: 2 3;
-        grid-columns: 1fr 2fr;
+        grid-columns: 25 1fr;
         grid-rows: auto 1fr auto;
     }
 
@@ -115,19 +110,26 @@ class ExplorerScreen(Screen):
         overflow: hidden;
     }
 
-    #table-info {
-        height: auto;
+    #top-row {
+        height: 1fr;
     }
 
-    #map-container {
-        height: auto;
-        max-height: 20;
+    #table-info {
+        width: 1fr;
+        height: 100%;
+        padding: 1;
+        border: solid $secondary;
         overflow-y: auto;
     }
 
+    #map-container {
+        width: 2fr;
+        height: 100%;
+        padding: 0;
+    }
+
     #data-preview-container {
-        height: 1fr;
-        min-height: 10;
+        height: 14;
         border: solid $accent;
         padding: 0;
         overflow: auto;
@@ -170,9 +172,10 @@ class ExplorerScreen(Screen):
             yield OptionList(id="table-list")
 
         with Vertical(id="right-panel"):
-            yield TableInfo(id="table-info")
-            with Container(id="map-container"):
-                yield BrailleMapWidget(width=60, height=15, title="Geometri-förhandsvisning")
+            with Horizontal(id="top-row"):
+                yield TableInfo(id="table-info")
+                with Container(id="map-container"):
+                    yield BrailleMapWidget(width=80, height=25, title="Geometri-förhandsvisning")
             with Container(id="data-preview-container"):
                 yield DataTable(id="data-table")
 
@@ -218,7 +221,7 @@ class ExplorerScreen(Screen):
                     LEFT JOIN information_schema.columns c
                         ON t.table_schema = c.table_schema
                         AND t.table_name = c.table_name
-                    WHERE t.table_schema IN ('raw', 'staging', 'mart')
+                    WHERE t.table_schema IN ('raw', 'staging', 'staging_2', 'mart')
                     GROUP BY t.table_schema, t.table_name
                 )
                 SELECT table_schema, table_name, has_geometry
@@ -226,8 +229,9 @@ class ExplorerScreen(Screen):
                 ORDER BY
                     CASE table_schema
                         WHEN 'mart' THEN 1
-                        WHEN 'staging' THEN 2
-                        WHEN 'raw' THEN 3
+                        WHEN 'staging_2' THEN 2
+                        WHEN 'staging' THEN 3
+                        WHEN 'raw' THEN 4
                     END,
                     has_geometry DESC,
                     table_name

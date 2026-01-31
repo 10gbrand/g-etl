@@ -1,225 +1,249 @@
-"""SQL Generator för staging och mart-tabeller.
+"""SQL Generator för template-baserade transformationer.
 
-Genererar SQL baserat på konfiguration i datasets.yml och använder
-makron definierade i migrations.
+Generisk SQL-generator som:
+1. Hittar alla *_template.sql filer i sql/migrations/
+2. Ersätter {{ variabel }} med värden från datasets.yml
+3. Kör templates i nummerordning
 
 Användning:
     from scripts.sql_generator import SQLGenerator
 
     generator = SQLGenerator()
-    sql = generator.staging_sql("avverkningsanmalningar", {"source_id_column": "beteckn"})
-    conn.execute(sql)
+
+    # Lista alla templates
+    templates = generator.list_templates()
+
+    # Generera SQL för ett dataset med en specifik template
+    sql = generator.render_template("004_staging_transform_template.sql", "naturreservat", config)
+
+    # Generera SQL för alla templates för ett dataset
+    for template, sql in generator.render_all_templates("naturreservat", config):
+        conn.execute(sql)
 """
 
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from config.settings import settings
 
 
 @dataclass
-class StagingConfig:
-    """Konfiguration för staging-transformation."""
+class DatasetConfig:
+    """Konfiguration för ett dataset från field_mapping i datasets.yml."""
 
-    source_id_column: str = "id"
+    # Identitet
+    dataset_id: str = ""
+
+    # Fältmappning (från field_mapping)
+    source_id_column: str = ""
     geometry_column: str = "geom"
-    h3_resolution: int = 13
+    h3_center_resolution: int = 13
     h3_polyfill_resolution: int = 11
-    where_clause: str | None = None
-
-
-@dataclass
-class Staging2Config:
-    """Konfiguration för staging_2-normalisering."""
-
-    source_id_column: str = "id"
     klass: str = ""
     grupp: str = ""
-    typ: str | None = None  # None = ingen typ-kolumn, str = kolumnnamn
+    typ: str = ""
     leverantor: str = ""
-    data_mappings: dict[str, str] = field(default_factory=dict)  # {source_col: target_col}
+
+    # Extra data-mappningar
+    data_mappings: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dataset_yml(cls, dataset_id: str, config: dict) -> "DatasetConfig":
+        """Skapa DatasetConfig från datasets.yml-entry."""
+        fm = config.get("field_mapping", {})
+
+        return cls(
+            dataset_id=dataset_id,
+            source_id_column=fm.get("source_id_column", ""),
+            geometry_column=fm.get("geometry_column", "geom"),
+            h3_center_resolution=fm.get("h3_center_resolution", 13),
+            h3_polyfill_resolution=fm.get("h3_polyfill_resolution", 11),
+            klass=fm.get("klass", ""),
+            grupp=fm.get("grupp", ""),
+            typ=fm.get("typ", ""),
+            leverantor=fm.get("leverantor", ""),
+            data_mappings=fm.get("data_mappings", {}),
+        )
 
 
 class SQLGenerator:
-    """Genererar SQL för staging och mart-transformationer."""
+    """Generisk SQL-generator för template-baserade transformationer."""
 
-    def staging_sql(self, dataset_id: str, config: dict | StagingConfig | None = None) -> str:
-        """Generera SQL för staging-transformation.
+    def __init__(self, sql_path: Path | None = None):
+        self.sql_path = sql_path or settings.SQL_DIR
+        self._template_cache: dict[str, str] = {}
 
-        Använder makron från 004_staging_procedure.sql:
-        - validate_geom()
-        - wgs84_centroid_lat/lng()
-        - h3_centroid()
-        - h3_polyfill()
-        - json_without_geom()
+    def _load_template(self, template_name: str) -> str:
+        """Läs mall från fil (cachad)."""
+        if template_name not in self._template_cache:
+            template_path = self.sql_path / "migrations" / template_name
+            if template_path.exists():
+                self._template_cache[template_name] = template_path.read_text()
+            else:
+                self._template_cache[template_name] = ""
+        return self._template_cache[template_name]
 
-        Args:
-            dataset_id: ID för datasetet (t.ex. 'avverkningsanmalningar')
-            config: StagingConfig eller dict med konfiguration
+    def list_templates(self) -> list[str]:
+        """Lista alla template-filer i nummerordning."""
+        migrations_dir = self.sql_path / "migrations"
+        if not migrations_dir.exists():
+            return []
 
-        Returns:
-            SQL-sträng för CREATE OR REPLACE TABLE
-        """
-        if config is None:
-            cfg = StagingConfig()
-        elif isinstance(config, dict):
-            cfg = StagingConfig(**{k: v for k, v in config.items() if hasattr(StagingConfig, k)})
-        else:
-            cfg = config
-
-        where_clause = f"WHERE {cfg.where_clause}" if cfg.where_clause else "WHERE geom IS NOT NULL"
-
-        return f"""
--- Auto-genererad staging för {dataset_id}
--- Källa: raw.{dataset_id}
--- Konfiguration: source_id={cfg.source_id_column}
-
-CREATE OR REPLACE TABLE staging.{dataset_id} AS
-WITH source_data AS (
-    SELECT * FROM raw.{dataset_id}
-    {where_clause}
-)
-SELECT
-    -- Alla originalkolumner exklusive geometri
-    s.* EXCLUDE (geom),
-
-    -- === VALIDERAD GEOMETRI ===
-    validate_geom(s.geom) AS geom,
-
-    -- === STAGING METADATA ===
-    CURRENT_TIMESTAMP AS _imported_at,
-    MD5(ST_AsText(s.geom)) AS _geom_md5,
-    MD5(to_json(s)::VARCHAR) AS _attr_md5,
-    json_without_geom(to_json(s)) AS _json_data,
-    MD5(CAST(s.{cfg.source_id_column} AS VARCHAR)) AS _source_id_md5,
-
-    -- === CENTROID (WGS84) ===
-    wgs84_centroid_lat(s.geom) AS _centroid_lat,
-    wgs84_centroid_lng(s.geom) AS _centroid_lng,
-
-    -- === H3 INDEX ===
-    h3_centroid(s.geom) AS _h3_index,
-    h3_polyfill(s.geom) AS _h3_cells,
-
-    -- === RESERVERAD ===
-    NULL::VARCHAR AS _a5_index
-
-FROM source_data s;
-"""
+        templates = sorted([
+            f.name for f in migrations_dir.glob("*_template.sql")
+        ])
+        return templates
 
     def _is_column_ref(self, value: str | None) -> bool:
-        """Kolla om ett värde är en kolumnreferens (inte en literal sträng)."""
+        """Kolla om ett värde är en kolumnreferens (börjar med $)."""
         if value is None or value == "":
             return False
-        # Om det börjar med ' är det en literal
-        if value.startswith("'"):
-            return False
-        # Om det är en giltig identifierare (börjar med bokstav/underscore)
-        # och inte innehåller mellanslag, anta att det är en kolumnreferens
-        if value[0].isalpha() or value[0] == "_":
-            return True
-        return False
+        return value.startswith("$")
 
-    def staging2_sql(self, dataset_id: str, config: dict | Staging2Config | None = None) -> str:
-        """Generera SQL för staging_2-normalisering.
+    def _get_column_name(self, value: str) -> str:
+        """Extrahera kolumnnamn från $-prefixat värde."""
+        if value.startswith("$"):
+            return value[1:]
+        return value
 
-        Args:
-            dataset_id: ID för datasetet
-            config: Staging2Config eller dict med konfiguration
+    def _build_variables(self, config: DatasetConfig) -> dict[str, str]:
+        """Bygg variabel-dict för substitution."""
+        # Grundläggande variabler
+        variables = {
+            "dataset_id": config.dataset_id,
+            "source_id_column": self._get_column_name(config.source_id_column),
+            "geometry_column": config.geometry_column,
+            "h3_center_resolution": str(config.h3_center_resolution),
+            "h3_polyfill_resolution": str(config.h3_polyfill_resolution),
+            "klass": config.klass,
+            "leverantor": config.leverantor,
+        }
 
-        Returns:
-            SQL-sträng för CREATE OR REPLACE TABLE
-        """
-        if config is None:
-            cfg = Staging2Config()
-        elif isinstance(config, dict):
-            cfg = Staging2Config(**{k: v for k, v in config.items() if hasattr(Staging2Config, k)})
+        # source_id_expr - kolumnreferens eller tom sträng
+        # source_id_column är alltid en kolumnreferens (kan ha $ eller inte)
+        src_col = self._get_column_name(config.source_id_column)
+        if src_col and src_col.strip():
+            variables["source_id_expr"] = f"s.{src_col}::VARCHAR"
         else:
-            cfg = config
+            variables["source_id_expr"] = "''"
 
-        # Hantera source_id_column - om tom, använd '' som literal
-        if cfg.source_id_column and cfg.source_id_column.strip():
-            source_id_expr = f"s.{cfg.source_id_column}::VARCHAR"
+        # grupp_expr - kolumnreferens ($prefix) eller literal
+        if self._is_column_ref(config.grupp):
+            col_name = self._get_column_name(config.grupp)
+            variables["grupp_expr"] = f"COALESCE(s.{col_name}::VARCHAR, '')"
         else:
-            source_id_expr = "''"
+            variables["grupp_expr"] = f"'{config.grupp}'" if config.grupp else "''"
 
-        # Hantera grupp - kan vara kolumnreferens eller literal
-        if self._is_column_ref(cfg.grupp):
-            grupp_expr = f"COALESCE(s.{cfg.grupp}::VARCHAR, '')"
+        # typ_expr - kolumnreferens ($prefix) eller literal
+        if config.typ is None or config.typ == "":
+            variables["typ_expr"] = "''"
+        elif self._is_column_ref(config.typ):
+            col_name = self._get_column_name(config.typ)
+            variables["typ_expr"] = f"COALESCE(s.{col_name}::VARCHAR, '')"
         else:
-            grupp_expr = f"'{cfg.grupp}'" if cfg.grupp else "''"
+            variables["typ_expr"] = f"'{config.typ}'"
 
-        # Hantera typ - kan vara kolumnreferens eller literal
-        if cfg.typ is None or cfg.typ == "":
-            typ_expr = "''"
-        elif self._is_column_ref(cfg.typ):
-            typ_expr = f"COALESCE(s.{cfg.typ}::VARCHAR, '')"
-        else:
-            typ_expr = f"'{cfg.typ}'"
-
-        # Bygg data-kolumner
-        data_cols = []
+        # data_N_expr för extra kolumner (alltid kolumnreferenser)
         for i in range(1, 6):
             target = f"data_{i}"
-            if target in cfg.data_mappings:
-                source = cfg.data_mappings[target]
-                data_cols.append(f"COALESCE(s.{source}::VARCHAR, '') AS {target}")
+            if target in config.data_mappings:
+                source = self._get_column_name(config.data_mappings[target])
+                variables[f"data_{i}_expr"] = f"COALESCE(s.{source}::VARCHAR, '')"
             else:
-                # Kolla om det finns en mapping med source-namn
-                source_match = [k for k, v in cfg.data_mappings.items() if v == target]
-                if source_match:
-                    data_cols.append(f"COALESCE(s.{source_match[0]}::VARCHAR, '') AS {target}")
-                else:
-                    data_cols.append(f"'' AS {target}")
+                variables[f"data_{i}_expr"] = "''"
 
-        data_cols_sql = ",\n    ".join(data_cols)
+        return variables
 
-        return f"""
--- Auto-genererad staging_2 för {dataset_id}
--- Källa: staging.{dataset_id}
--- Konfiguration: klass={cfg.klass}, leverantor={cfg.leverantor}
+    def _substitute(self, template: str, variables: dict[str, str]) -> str:
+        """Ersätt {{ variabel }} med värden."""
+        result = template
+        for key, value in variables.items():
+            result = result.replace("{{ " + key + " }}", value)
+            result = result.replace("{{" + key + "}}", value)
+        return result
 
-CREATE OR REPLACE TABLE staging_2.{dataset_id} AS
-SELECT
-    s._source_id_md5 AS id,
-    {source_id_expr} AS source_id,
-    '{cfg.klass}' AS klass,
-    {grupp_expr} AS grupp,
-    {typ_expr} AS typ,
-    '{cfg.leverantor}' AS leverantor,
-    s._h3_index AS h3_center,
-    s._h3_cells AS h3_cells,
-    s._json_data AS json_data,
-    {data_cols_sql},
-    s.geom
+    def render_template(
+        self,
+        template_name: str,
+        dataset_id: str,
+        config: dict | DatasetConfig | None = None,
+    ) -> str:
+        """Rendera en template med variabelsubstitution.
 
-FROM staging.{dataset_id} s;
-"""
-
-    def mart_h3_sql(self) -> str:
-        """Generera SQL för mart.h3_cells aggregering.
-
-        Skapar en tabell som aggregerar alla H3-celler från staging_2.
+        Args:
+            template_name: Filnamn på template (t.ex. "004_staging_transform_template.sql")
+            dataset_id: Dataset-ID
+            config: Dict från datasets.yml eller DatasetConfig
 
         Returns:
-            SQL-sträng för CREATE OR REPLACE TABLE
+            SQL-sträng med substituerade variabler
         """
-        return """
--- Auto-genererad mart.h3_cells
--- Aggregerar H3-celler från alla staging_2-tabeller
--- Körs efter att alla staging_2-tabeller är skapade
+        template = self._load_template(template_name)
+        if not template:
+            return ""
 
-CREATE OR REPLACE TABLE mart.h3_cells (
-    h3_cell VARCHAR NOT NULL,
-    dataset VARCHAR NOT NULL,
-    leverantor VARCHAR,
-    klass VARCHAR,
-    classification VARCHAR
-);
+        # Konvertera config till DatasetConfig
+        if config is None:
+            cfg = DatasetConfig(dataset_id=dataset_id)
+        elif isinstance(config, dict):
+            cfg = DatasetConfig.from_dataset_yml(dataset_id, config)
+        else:
+            cfg = config
+            cfg.dataset_id = dataset_id
 
--- Tabellen populeras dynamiskt av pipeline_runner.populate_h3_cells()
-"""
+        variables = self._build_variables(cfg)
+        return self._substitute(template, variables)
+
+    def render_all_templates(
+        self,
+        dataset_id: str,
+        config: dict | DatasetConfig | None = None,
+    ) -> list[tuple[str, str]]:
+        """Rendera alla templates för ett dataset.
+
+        Args:
+            dataset_id: Dataset-ID
+            config: Dict från datasets.yml eller DatasetConfig
+
+        Returns:
+            Lista av (template_name, rendered_sql) tuples i nummerordning
+        """
+        results = []
+        for template_name in self.list_templates():
+            sql = self.render_template(template_name, dataset_id, config)
+            if sql:
+                results.append((template_name, sql))
+        return results
+
+    # === Bakåtkompatibla metoder ===
+
+    def staging_sql(self, dataset_id: str, config: dict | None = None) -> str:
+        """Generera staging SQL (bakåtkompatibel)."""
+        full_config = {"staging": config or {}}
+        return self.render_template(
+            "004_staging_transform_template.sql",
+            dataset_id,
+            full_config,
+        )
+
+    def staging2_sql(self, dataset_id: str, config: dict | None = None) -> str:
+        """Generera staging_2 SQL (bakåtkompatibel)."""
+        full_config = {"staging_2": config or {}}
+        return self.render_template(
+            "005_staging2_normalisering_template.sql",
+            dataset_id,
+            full_config,
+        )
+
+    def mart_h3_sql(self) -> str:
+        """Läs mart.h3_cells SQL."""
+        return self._load_template("006_mart_h3_cells.sql")
 
 
-# Singleton-instans för enkel användning
+# Singleton-instans
 _generator = None
+
 
 def get_generator() -> SQLGenerator:
     """Hämta singleton-instans av SQLGenerator."""
@@ -237,3 +261,13 @@ def staging_sql(dataset_id: str, config: dict | None = None) -> str:
 def staging2_sql(dataset_id: str, config: dict | None = None) -> str:
     """Generera staging_2 SQL för ett dataset."""
     return get_generator().staging2_sql(dataset_id, config)
+
+
+def render_template(template_name: str, dataset_id: str, config: dict | None = None) -> str:
+    """Rendera en template med config."""
+    return get_generator().render_template(template_name, dataset_id, config)
+
+
+def list_templates() -> list[str]:
+    """Lista alla templates."""
+    return get_generator().list_templates()
