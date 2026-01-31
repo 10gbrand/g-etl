@@ -1,6 +1,8 @@
 -- DuckDB Makros
 -- Återanvändbara makron för geometrihantering, datatransformation och staging
 
+-- migrate:up
+
 -- =============================================================================
 -- Projektionsmakron (PROJ4-strängar för koordinattransformation)
 -- =============================================================================
@@ -148,3 +150,6 @@ CREATE OR REPLACE MACRO format_date_iso(d) AS
         WHEN d IS NULL THEN NULL
         ELSE strftime(d, '%Y-%m-%d')
     END;
+
+-- migrate:down
+-- Makron kan inte enkelt tas bort, men de skrivs över vid nästa migrate:up

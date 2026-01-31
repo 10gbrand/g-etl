@@ -1,6 +1,8 @@
 -- Staging-mall för {{ dataset_id }}
 -- Genereras automatiskt från datasets.yml
---
+
+-- migrate:up
+
 -- Staging-kolumner:
 --   geom             - Validerad geometri
 --   _imported_at     - Tidsstämpel för import
@@ -74,3 +76,6 @@ SELECT
     NULL::VARCHAR AS _a5_index
 
 FROM source_data s;
+
+-- migrate:down
+DROP TABLE IF EXISTS staging.{{ dataset_id }};

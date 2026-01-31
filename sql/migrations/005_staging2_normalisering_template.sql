@@ -2,6 +2,8 @@
 -- Normaliserar staging till enhetlig struktur
 -- Genereras automatiskt från datasets.yml
 
+-- migrate:up
+
 CREATE OR REPLACE TABLE staging_2.{{ dataset_id }} AS
 SELECT
     s._source_id_md5 AS id,
@@ -21,3 +23,6 @@ SELECT
     s.geom,
     ST_PointOnSurface(s.geom) AS centerpoint
 FROM staging.{{ dataset_id }} s;
+
+-- migrate:down
+DROP TABLE IF EXISTS staging_2.{{ dataset_id }};

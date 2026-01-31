@@ -10,6 +10,7 @@ import yaml
 
 from config.settings import settings
 from plugins import get_plugin
+from scripts.migrations.migrator import Migrator, MigrationStatus
 from scripts.sql_generator import SQLGenerator
 
 
@@ -59,7 +60,7 @@ class PipelineRunner:
     def _init_database(self):
         """Initiera databas med extensions, scheman och makron.
 
-        Kör endast infrastruktur-filer (001-003):
+        Använder Migrator för att köra och spåra infrastruktur-migrationer (001-003):
         - 001_db_extensions.sql
         - 002_db_schemas.sql
         - 003_db_makros.sql
@@ -71,24 +72,27 @@ class PipelineRunner:
         if conn is None:
             return
 
-        # Kör endast infrastruktur-skript (001-003) i sql/migrations/
         init_folder = self.sql_path / "migrations"
         if init_folder.exists():
-            for sql_file in sorted(init_folder.glob("*.sql")):
-                # Hoppa över template-filer (de körs per dataset)
-                if "_template.sql" in sql_file.name:
+            # Använd Migrator för att köra och spåra migrationer
+            migrator = Migrator(conn, init_folder)
+
+            for migration in migrator.discover_migrations():
+                # Hoppa över templates (körs per dataset)
+                if migrator.is_template_migration(migration):
                     continue
 
-                # Kör endast filer som börjar med 001, 002 eller 003
-                # (extensions, scheman, makron)
-                if not sql_file.name[:3] in ("001", "002", "003"):
+                # Kör endast infra-migrationer (001-003)
+                if migration.version not in ("001", "002", "003"):
                     continue
 
-                sql_content = sql_file.read_text()
+                # Hoppa över redan körda
+                if migration.status == MigrationStatus.APPLIED:
+                    continue
 
-                # Dela upp SQL-filen i enskilda statements
+                # Kör migrationen statement för statement
                 # (DuckDB execute() kan bara köra ett statement åt gången)
-                statements = self._split_sql_statements(sql_content)
+                statements = self._split_sql_statements(migration.up_sql)
 
                 for stmt in statements:
                     try:
@@ -96,6 +100,16 @@ class PipelineRunner:
                     except Exception:
                         # Ignorera förväntade fel (t.ex. extension redan laddad)
                         pass
+
+                # Registrera som körd
+                try:
+                    checksum = migrator._calculate_checksum(migration.up_sql)
+                    conn.execute(f"""
+                        INSERT INTO {migrator.MIGRATIONS_TABLE} (version, name, checksum)
+                        VALUES ('{migration.version}', '{migration.name}', '{checksum}')
+                    """)
+                except Exception:
+                    pass  # Redan registrerad
         else:
             # Fallback om migrations-mappen inte finns
             for ext in ["spatial", "parquet", "httpfs", "json"]:
@@ -551,12 +565,15 @@ class PipelineRunner:
         max_concurrent: int = 4,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        force: bool = False,
     ) -> bool:
         """Kör templates för alla datasets parallellt.
 
         Hittar automatiskt alla *_template.sql filer i sql/migrations/
         och kör dem i nummerordning. Inom varje template körs datasets
         parallellt för snabbare exekvering.
+
+        Använder Migrator för att spåra körda template-migrationer per dataset.
 
         Args:
             dataset_ids: Lista med dataset-ID:n att processa
@@ -566,12 +583,15 @@ class PipelineRunner:
             max_concurrent: Max antal parallella dataset-körningar
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
+            force: Om True, kör även redan körda migrationer
 
         Returns:
             True om alla processades framgångsrikt
         """
         generator = SQLGenerator()
         datasets_config = self._load_datasets_config()
+        conn = self._get_connection()
+        migrator = Migrator(conn, self.sql_path / "migrations")
 
         # Hämta och filtrera templates
         all_templates = generator.list_templates()
@@ -585,6 +605,12 @@ class PipelineRunner:
                 filter_msg = f" (filter: {template_filter})" if template_filter else ""
                 on_log(f"Inga templates hittades{filter_msg}")
             return True
+
+        # Bygg mapping från template-namn till Migration-objekt
+        template_migrations = {}
+        for migration in migrator.discover_migrations():
+            if migrator.is_template_migration(migration):
+                template_migrations[migration.name] = migration
 
         phase_display = phase_name or "Templates"
         if on_log:
@@ -603,6 +629,17 @@ class PipelineRunner:
                 # Hämta config från datasets.yml
                 ds_config = datasets_config.get(dataset_id, {})
 
+                # Hämta Migration-objekt för denna template
+                migration = template_migrations.get(template_name)
+
+                # Kolla om redan körd (om inte force)
+                if migration and not force:
+                    if migrator.is_template_applied(migration.version, dataset_id):
+                        completed_count += 1
+                        if on_log:
+                            on_log(f"  ○ {dataset_id}: {template_name} redan körd")
+                        return (template_name, dataset_id, True, None)
+
                 if on_event:
                     on_event(PipelineEvent(
                         event_type="progress",
@@ -618,12 +655,29 @@ class PipelineRunner:
                         completed_count += 1
                         return (template_name, dataset_id, True, None)
 
-                    # Kör SQL med egen connection (för thread-safety)
+                    # Kör SQL med egen connection och spåra med Migrator
                     def do_sql():
                         # Varje parallell task får egen connection
                         task_conn = duckdb.connect(self.db_path)
                         try:
                             task_conn.execute(sql)
+
+                            # Registrera som körd i migrations-tabellen
+                            if migration:
+                                task_migrator = Migrator(task_conn, self.sql_path / "migrations")
+                                template_version = task_migrator.get_template_version(
+                                    migration.version, dataset_id
+                                )
+                                checksum = task_migrator._calculate_checksum(sql)
+                                template_name_with_ds = f"{migration.name}:{dataset_id}"
+                                try:
+                                    task_conn.execute(f"""
+                                        INSERT INTO {task_migrator.MIGRATIONS_TABLE}
+                                        (version, name, checksum)
+                                        VALUES ('{template_version}', '{template_name_with_ds}', '{checksum}')
+                                    """)
+                                except Exception:
+                                    pass  # Redan registrerad
                         finally:
                             task_conn.close()
 
@@ -632,14 +686,14 @@ class PipelineRunner:
 
                     completed_count += 1
                     if on_log:
-                        on_log(f"  {dataset_id}: {template_name} OK")
+                        on_log(f"  ✓ {dataset_id}: {template_name} OK")
 
                     return (template_name, dataset_id, True, None)
 
                 except Exception as e:
                     completed_count += 1
                     if on_log:
-                        on_log(f"  {dataset_id}: FEL - {e}")
+                        on_log(f"  ✗ {dataset_id}: FEL - {e}")
                     return (template_name, dataset_id, False, str(e))
 
         # Kör templates sekventiellt (de kan ha dependencies)
@@ -687,6 +741,14 @@ class PipelineRunner:
         # Sortera templates i körordning
         templates = sorted(all_templates)
 
+        # Bygg mapping från template-namn till Migration-objekt för spårning
+        conn = self._get_connection()
+        migrator = Migrator(conn, self.sql_path / "migrations")
+        template_migrations = {}
+        for migration in migrator.discover_migrations():
+            if migrator.is_template_migration(migration):
+                template_migrations[migration.name] = migration
+
         max_concurrent = settings.MAX_CONCURRENT_SQL
         semaphore = asyncio.Semaphore(max_concurrent)
         results: list[tuple[str, str, bool]] = []  # (dataset_id, temp_path, success)
@@ -725,6 +787,9 @@ class PipelineRunner:
                             for schema in settings.DUCKDB_SCHEMAS:
                                 temp_conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
+                            # Skapa migrations-tabell för spårning
+                            temp_migrator = Migrator(temp_conn, self.sql_path / "migrations")
+
                             # Ladda parquet till raw
                             temp_conn.execute(f"""
                                 CREATE OR REPLACE TABLE raw.{dataset_id} AS
@@ -736,13 +801,30 @@ class PipelineRunner:
                                 temp_conn, dataset_id
                             )
 
-                            # Kör alla templates i ordning
+                            # Kör alla templates i ordning och spåra
                             for template_name in templates:
+                                migration = template_migrations.get(template_name)
                                 sql = generator.render_template(
                                     template_name, dataset_id, ds_config
                                 )
                                 if sql:
                                     temp_conn.execute(sql)
+
+                                    # Registrera som körd
+                                    if migration:
+                                        template_version = temp_migrator.get_template_version(
+                                            migration.version, dataset_id
+                                        )
+                                        checksum = temp_migrator._calculate_checksum(sql)
+                                        template_name_with_ds = f"{migration.name}:{dataset_id}"
+                                        try:
+                                            temp_conn.execute(f"""
+                                                INSERT INTO {temp_migrator.MIGRATIONS_TABLE}
+                                                (version, name, checksum)
+                                                VALUES ('{template_version}', '{template_name_with_ds}', '{checksum}')
+                                            """)
+                                        except Exception:
+                                            pass
 
                         finally:
                             temp_conn.close()

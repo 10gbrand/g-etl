@@ -32,8 +32,10 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 
 **Database:**
 - `task db:cli` - Öppna DuckDB REPL
-- `task db:migrate` - Kör alla migrationer
-- `task db:migrate:status` - Visa status för migrationer
+- `task db:migrate` - Kör väntande statiska migrationer (001-003)
+- `task db:migrate:status` - Visa status för alla migrationer
+- `task db:migrate:rollback` - Rulla tillbaka senaste statiska migreringen
+- `task db:migrate:create -- <namn>` - Skapa ny migreringsfil
 
 **Admin TUI:**
 - `task admin:run` - Starta admin TUI
@@ -93,7 +95,7 @@ Post-merge:
 - `scripts/sql_generator.py` - Genererar SQL från mallar + datasets.yml
 - `scripts/pipeline.py` - Pipeline-runner (CLI)
 - `scripts/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet)
-- `scripts/db.py` - Gemensamma databasverktyg
+- `scripts/migrations/` - Migreringssystem (Migrator, CLI)
 - `scripts/admin/app.py` - Textual TUI-applikation
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
 - `config/settings.py` - Centrala inställningar (H3-resolution, CRS, parallelism)
@@ -104,6 +106,15 @@ Post-merge:
 MAX_CONCURRENT_EXTRACTS  # = cpu_count() för I/O-bound extract
 MAX_CONCURRENT_SQL       # = cpu_count() // 2 för CPU-bound SQL (DuckDB paralleliserar internt)
 ```
+
+**Migreringsspårning:**
+
+Pipeline:n integrerar med migreringssystemet för att spåra körda SQL-filer:
+
+- **Statiska migrationer (001-003)**: Spåras som `001`, `002`, `003` i `_migrations`
+- **Template-migrationer (004+)**: Spåras per dataset som `004:dataset_id`, `005:dataset_id`, etc.
+
+När en template redan är körd för ett dataset hoppas den över (om inte `force=True`).
 
 **SQL-struktur:**
 

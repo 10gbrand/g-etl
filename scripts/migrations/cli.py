@@ -17,17 +17,17 @@ from config.settings import settings
 from scripts.migrations.migrator import Migrator, MigrationStatus
 
 
-def get_connection(db_path: str | None = None) -> duckdb.DuckDBPyConnection:
+def get_connection(db_path: str | None = None, read_only: bool = False) -> duckdb.DuckDBPyConnection:
     """Skapa databasanslutning."""
     path = db_path or str(settings.DATA_DIR / f"{settings.DB_PREFIX}{settings.DB_EXTENSION}")
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(path)
+    return duckdb.connect(path, read_only=read_only)
 
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Visa status för alla migrationer."""
-    conn = get_connection(args.db)
-    migrator = Migrator(conn, args.migrations_dir)
+    conn = get_connection(args.db, read_only=True)
+    migrator = Migrator(conn, args.migrations_dir, read_only=True)
 
     migrations = migrator.discover_migrations()
 
@@ -36,19 +36,47 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"Sökväg: {args.migrations_dir}")
         return 0
 
+    # Separera statiska och template-migrationer
+    static_migrations = [m for m in migrations if not migrator.is_template_migration(m)]
+    template_migrations = [m for m in migrations if migrator.is_template_migration(m)]
+
+    # Visa statiska migrationer
+    print("=== Statiska migrationer ===")
     print(f"{'Version':<10} {'Namn':<40} {'Status':<10} {'Down'}")
     print("-" * 70)
 
-    for m in migrations:
+    for m in static_migrations:
         status_icon = "✓" if m.status == MigrationStatus.APPLIED else "○"
         down_icon = "✓" if m.down_sql else "-"
         print(f"{m.version:<10} {m.name:<40} {status_icon:<10} {down_icon}")
 
-    pending = [m for m in migrations if m.status == MigrationStatus.PENDING]
-    applied = [m for m in migrations if m.status == MigrationStatus.APPLIED]
+    # Visa template-migrationer
+    if template_migrations:
+        print()
+        print("=== Template-migrationer (körs per dataset) ===")
+        print(f"{'Version':<10} {'Namn':<40} {'Datasets körda'}")
+        print("-" * 70)
+
+        for m in template_migrations:
+            # Hämta antal körda datasets för denna template
+            try:
+                result = conn.execute(f"""
+                    SELECT COUNT(*) FROM {migrator.MIGRATIONS_TABLE}
+                    WHERE version LIKE '{m.version}:%'
+                """)
+                count = result.fetchone()[0]
+            except Exception:
+                count = 0
+
+            print(f"{m.version:<10} {m.name:<40} {count}")
+
+    # Sammanfattning
+    pending_static = [m for m in static_migrations if m.status == MigrationStatus.PENDING]
+    applied_static = [m for m in static_migrations if m.status == MigrationStatus.APPLIED]
 
     print()
-    print(f"Totalt: {len(migrations)} migrationer ({len(applied)} körda, {len(pending)} väntande)")
+    print(f"Statiska: {len(static_migrations)} ({len(applied_static)} körda, {len(pending_static)} väntande)")
+    print(f"Templates: {len(template_migrations)} (körs per dataset)")
 
     conn.close()
     return 0

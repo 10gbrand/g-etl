@@ -84,16 +84,20 @@ class Migrator:
         self,
         conn: DatabaseConnection,
         migrations_dir: Path | str = "sql/migrations",
+        read_only: bool = False,
     ):
         """Initiera migratorn.
 
         Args:
             conn: Databasanslutning (DuckDB eller PostgreSQL)
             migrations_dir: Sökväg till migreringsfiler
+            read_only: Om True, skapa inte migrations-tabell
         """
         self.conn = conn
         self.migrations_dir = Path(migrations_dir)
-        self._ensure_migrations_table()
+        self._read_only = read_only
+        if not read_only:
+            self._ensure_migrations_table()
 
     def _ensure_migrations_table(self) -> None:
         """Skapa migrations-tabellen om den inte finns."""
@@ -361,6 +365,142 @@ class Migrator:
             }
             for m in migrations
         ]
+
+    def is_template_migration(self, migration: Migration) -> bool:
+        """Kontrollera om en migrering är en template.
+
+        Template-migrationer har "_template" i filnamnet och körs
+        en gång per dataset istället för en gång totalt.
+        """
+        return "_template" in migration.name
+
+    def get_template_version(self, version: str, dataset_id: str) -> str:
+        """Generera versions-ID för en template-migrering med dataset.
+
+        Format: "004:sksbiotopskydd" för template "004_staging_transform_template"
+        """
+        return f"{version}:{dataset_id}"
+
+    def is_template_applied(self, version: str, dataset_id: str) -> bool:
+        """Kontrollera om en template-migrering är körd för ett dataset."""
+        template_version = self.get_template_version(version, dataset_id)
+        try:
+            result = self.conn.execute(f"""
+                SELECT 1 FROM {self.MIGRATIONS_TABLE}
+                WHERE version = '{template_version}'
+            """)
+            return result.fetchone() is not None
+        except Exception:
+            return False
+
+    def apply_template(
+        self,
+        migration: Migration,
+        dataset_id: str,
+        rendered_sql: str,
+        on_log: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Kör en template-migrering för ett specifikt dataset.
+
+        Args:
+            migration: Template-migreringen
+            dataset_id: Dataset-ID att köra för
+            rendered_sql: Renderad SQL med dataset-variabler
+            on_log: Callback för loggmeddelanden
+
+        Returns:
+            True om körningen lyckades
+        """
+        template_version = self.get_template_version(migration.version, dataset_id)
+
+        # Kolla om redan körd
+        if self.is_template_applied(migration.version, dataset_id):
+            if on_log:
+                on_log(f"  ○ {migration.name}:{dataset_id} redan körd")
+            return True
+
+        try:
+            # Kör renderad SQL
+            self.conn.execute(rendered_sql)
+
+            # Registrera som körd
+            checksum = self._calculate_checksum(rendered_sql)
+            template_name = f"{migration.name}:{dataset_id}"
+            self.conn.execute(f"""
+                INSERT INTO {self.MIGRATIONS_TABLE} (version, name, checksum)
+                VALUES ('{template_version}', '{template_name}', '{checksum}')
+            """)
+
+            if on_log:
+                on_log(f"  ✓ {migration.name}:{dataset_id} klar")
+
+            return True
+
+        except Exception as e:
+            if on_log:
+                on_log(f"  ✗ {migration.name}:{dataset_id}: {e}")
+            return False
+
+    def rollback_template(
+        self,
+        migration: Migration,
+        dataset_id: str,
+        rendered_down_sql: str | None = None,
+        on_log: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Rulla tillbaka en template-migrering för ett dataset.
+
+        Args:
+            migration: Template-migreringen
+            dataset_id: Dataset-ID att rulla tillbaka
+            rendered_down_sql: Renderad down-SQL (om None, körs ingen SQL)
+            on_log: Callback för loggmeddelanden
+
+        Returns:
+            True om rollback lyckades
+        """
+        template_version = self.get_template_version(migration.version, dataset_id)
+
+        if not self.is_template_applied(migration.version, dataset_id):
+            return True
+
+        try:
+            # Kör down-SQL om den finns
+            if rendered_down_sql:
+                self.conn.execute(rendered_down_sql)
+
+            # Ta bort från migrations-tabellen
+            self.conn.execute(f"""
+                DELETE FROM {self.MIGRATIONS_TABLE}
+                WHERE version = '{template_version}'
+            """)
+
+            if on_log:
+                on_log(f"  ✓ {migration.name}:{dataset_id} återställd")
+
+            return True
+
+        except Exception as e:
+            if on_log:
+                on_log(f"  ✗ {migration.name}:{dataset_id}: {e}")
+            return False
+
+    def get_applied_templates_for_dataset(self, dataset_id: str) -> list[str]:
+        """Hämta alla körda template-migrationer för ett dataset.
+
+        Returns:
+            Lista med versions-ID (t.ex. ["004", "005", "006"])
+        """
+        try:
+            result = self.conn.execute(f"""
+                SELECT version FROM {self.MIGRATIONS_TABLE}
+                WHERE version LIKE '%:{dataset_id}'
+            """)
+            rows = result.fetchall()
+            # Extrahera version utan dataset-suffixet
+            return [row[0].split(":")[0] for row in rows]
+        except Exception:
+            return []
 
     def create(
         self,

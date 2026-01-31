@@ -307,7 +307,7 @@ SELECT * FROM mart.sksbiotopskydd LIMIT 10;
 
 ### Migrationer
 
-SQL-baserat migreringssystem som fungerar med både DuckDB och PostgreSQL.
+SQL-baserat migreringssystem integrerat med pipeline:n. Migrationer spåras i tabellen `_migrations`.
 
 ```bash
 # Visa status för migrationer
@@ -323,10 +323,54 @@ task db:migrate:rollback
 task db:migrate:create -- "add_new_table"
 ```
 
-Migreringsfiler använder `-- migrate:up` och `-- migrate:down` för att separera up/down-SQL:
+#### Två typer av migrationer
+
+**Statiska migrationer (001-003)** - körs en gång totalt:
+
+- `001_db_extensions.sql` - DuckDB extensions
+- `002_db_schemas.sql` - Scheman (raw, staging, staging_2, mart)
+- `003_db_makros.sql` - SQL-makron
+
+**Template-migrationer (004-007)** - körs en gång per dataset:
+
+- `004_staging_transform_template.sql` - Staging med H3-index
+- `005_staging2_normalisering_template.sql` - Normaliserad struktur
+- `006_mart_h3_cells_template.sql` - Exploderade H3-celler
+- `007_mart_compact_h3_cells_template.sql` - Kompakterade H3-celler
+
+Templates spåras med dataset-suffix i `_migrations`-tabellen:
+
+- `004:sksbiotopskydd`, `004:naturreservat`, etc.
+
+#### Status-output
+
+```bash
+$ task db:migrate:status
+
+=== Statiska migrationer ===
+Version    Namn                                     Status     Down
+----------------------------------------------------------------------
+001        db_extensions                            ✓          ✓
+002        db_schemas                               ✓          ✓
+003        db_makros                                ✓          -
+
+=== Template-migrationer (körs per dataset) ===
+Version    Namn                                     Datasets körda
+----------------------------------------------------------------------
+004        staging_transform_template               5
+005        staging2_normalisering_template          5
+006        mart_h3_cells_template                   5
+007        mart_compact_h3_cells_template           5
+
+Statiska: 3 (3 körda, 0 väntande)
+Templates: 4 (körs per dataset)
+```
+
+#### Filformat
+
+Migreringsfiler använder `-- migrate:up` och `-- migrate:down`:
 
 ```sql
--- Migration: add_new_table
 -- migrate:up
 CREATE TABLE mart.analytics (
     id INTEGER PRIMARY KEY,
@@ -337,7 +381,7 @@ CREATE TABLE mart.analytics (
 DROP TABLE mart.analytics;
 ```
 
-Migrationer spåras i tabellen `_migrations` och kan även hanteras via TUI (tryck **G** i Pipeline-screenen).
+Migrationer kan även hanteras via TUI (tryck **G** i Pipeline-screenen).
 
 ## Dataset
 

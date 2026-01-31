@@ -75,11 +75,21 @@ class SQLGenerator:
         self._template_cache: dict[str, str] = {}
 
     def _load_template(self, template_name: str) -> str:
-        """Läs mall från fil (cachad)."""
+        """Läs mall från fil (cachad).
+
+        Extraherar endast 'migrate:up' sektionen om den finns.
+        """
         if template_name not in self._template_cache:
             template_path = self.sql_path / "migrations" / template_name
             if template_path.exists():
-                self._template_cache[template_name] = template_path.read_text()
+                content = template_path.read_text()
+                # Extrahera endast up-sektionen (stoppa vid migrate:down)
+                if "-- migrate:down" in content:
+                    content = content.split("-- migrate:down")[0]
+                # Ta bort migrate:up markören
+                if "-- migrate:up" in content:
+                    content = content.split("-- migrate:up", 1)[1]
+                self._template_cache[template_name] = content.strip()
             else:
                 self._template_cache[template_name] = ""
         return self._template_cache[template_name]

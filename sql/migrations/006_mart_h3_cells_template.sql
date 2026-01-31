@@ -2,6 +2,8 @@
 -- Skapar en tabell per dataset med exploderade H3-celler
 -- Genereras automatiskt från datasets.yml
 
+-- migrate:up
+
 CREATE OR REPLACE TABLE mart.{{ dataset_id }} AS
 SELECT
     id,
@@ -18,3 +20,6 @@ SELECT
     ) AS geom
 FROM staging_2.{{ dataset_id }}
 WHERE h3_cells IS NOT NULL AND h3_cells != '[]';
+
+-- migrate:down
+DROP TABLE IF EXISTS mart.{{ dataset_id }};
