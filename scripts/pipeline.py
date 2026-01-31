@@ -14,7 +14,7 @@ import yaml
 from dotenv import load_dotenv
 
 from config.settings import settings
-from plugins import get_plugin
+from plugins import clear_download_cache, get_plugin
 from plugins.base import ExtractResult
 
 load_dotenv()
@@ -463,6 +463,9 @@ class Pipeline:
             if on_log:
                 on_log("[Pipeline] Kör alla mart-transformationer...")
             sql_files_run += self.run_sql_files("mart", on_log)
+
+        # Rensa nedladdningscache (friggör temp-filer)
+        clear_download_cache()
 
         success = datasets_failed == 0
         message = f"Extract: {datasets_run} OK, {datasets_failed} fel. Transform: {sql_files_run} SQL-filer."

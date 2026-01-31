@@ -51,3 +51,12 @@ tasks:
     desc: Rensa build-artefakter
     cmds:
       - rm -rf build/ dist/ *.spec.bak
+
+  build-nuitka:
+    desc: Bygg Linux-executable med Nuitka i Docker
+    cmds:
+      - docker build -f Dockerfile.nuitka -t g-etl-nuitka .
+      - mkdir -p dist/nuitka
+      - docker run --rm -v {{.USER_WORKING_DIR}}/dist/nuitka:/output g-etl-nuitka cp /build/app.bin /output/g_etl
+    generates:
+      - dist/nuitka/*

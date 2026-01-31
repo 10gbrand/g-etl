@@ -4,7 +4,7 @@ from plugins.base import SourcePlugin
 from plugins.geoparquet import GeoParquetPlugin
 from plugins.lantmateriet import LantmaterietPlugin
 from plugins.wfs import WfsPlugin
-from plugins.zip_geopackage import ZipGeoPackagePlugin
+from plugins.zip_geopackage import ZipGeoPackagePlugin, clear_download_cache
 from plugins.zip_shapefile import ZipShapefilePlugin
 
 PLUGINS: dict[str, type[SourcePlugin]] = {

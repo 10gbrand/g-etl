@@ -32,9 +32,9 @@ tasks:
       - uv run python -m scripts.pipeline --list-types
 
   export:kepler:
-    desc: Exportera H3-data till CSV för Kepler.gl
+    desc: Exportera H3-data till CSV för Kepler.gl (en fil per mart-tabell)
     cmds:
-      - uv run python scripts/export_h3.py --format csv
+      - uv run python scripts/export_h3.py --per-table
 
   export:geojson:
     desc: Exportera H3-data till GeoJSON

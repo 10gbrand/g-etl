@@ -1,6 +1,7 @@
 """Plugin för att läsa zippade GeoPackage-filer från URL eller lokal fil."""
 
 import tempfile
+import threading
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -10,10 +11,43 @@ import requests
 
 from plugins.base import ExtractResult, SourcePlugin
 
+# Modul-nivå cache för nedladdade och extraherade filer
+# Cache: URL -> (zip_path, extracted_dir_path)
+# Rensas via clear_download_cache()
+_extract_cache: dict[str, tuple[str, str]] = {}
+_url_locks: dict[str, threading.Lock] = {}
+_global_lock = threading.Lock()
+
+
+def _get_url_lock(url: str) -> threading.Lock:
+    """Hämta (eller skapa) ett lås för en specifik URL."""
+    with _global_lock:
+        if url not in _url_locks:
+            _url_locks[url] = threading.Lock()
+        return _url_locks[url]
+
 
 def _is_url(source: str) -> bool:
     """Kontrollera om källan är en URL eller lokal sökväg."""
     return source.startswith(("http://", "https://"))
+
+
+def clear_download_cache() -> None:
+    """Rensa nedladdningscachen och ta bort temporära filer."""
+    global _extract_cache, _url_locks
+    import shutil
+    with _global_lock:
+        for url, (zip_path, extract_dir) in _extract_cache.items():
+            try:
+                Path(zip_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            try:
+                shutil.rmtree(extract_dir, ignore_errors=True)
+            except Exception:
+                pass
+        _extract_cache.clear()
+        _url_locks.clear()
 
 
 class ZipGeoPackagePlugin(SourcePlugin):
@@ -54,9 +88,42 @@ class ZipGeoPackagePlugin(SourcePlugin):
 
         try:
             if is_remote:
-                # === NEDLADDNING FRÅN URL ===
-                zip_path = self._download_zip(url, on_log, on_progress)
-                cleanup_zip = True  # Ta bort temp-fil efteråt
+                # === NEDLADDNING + EXTRAKTION FRÅN URL (med cache och lås) ===
+                url_lock = _get_url_lock(url)
+                with url_lock:
+                    if url in _extract_cache:
+                        # Använd cachad extraherad katalog
+                        _, extract_dir = _extract_cache[url]
+                        self._log(f"Använder cachad extraktion för {url}", on_log)
+                        self._progress(0.6, "Använder cachad extraktion...", on_progress)
+                    else:
+                        # Ladda ned och extrahera
+                        zip_path = self._download_zip(url, on_log, on_progress)
+
+                        self._log("Extraherar GeoPackage...", on_log)
+                        self._progress(0.6, "Extraherar zip-arkiv...", on_progress)
+
+                        # Extrahera till persistent katalog (inte TemporaryDirectory som raderas)
+                        extract_dir = tempfile.mkdtemp(prefix="g-etl-gpkg-")
+                        with zipfile.ZipFile(zip_path, "r") as zf:
+                            zf.extractall(extract_dir)
+
+                        # Cacha både zip och extraherad katalog
+                        _extract_cache[url] = (zip_path, extract_dir)
+
+                # Hitta .gpkg-fil i cachad katalog
+                if gpkg_filename:
+                    gpkg_path = Path(extract_dir) / gpkg_filename
+                else:
+                    gpkg_files = list(Path(extract_dir).rglob("*.gpkg"))
+                    if not gpkg_files:
+                        return ExtractResult(
+                            success=False,
+                            message="Ingen .gpkg-fil hittades i zip-arkivet",
+                        )
+                    gpkg_path = gpkg_files[0]
+                    if len(gpkg_files) > 1:
+                        self._log(f"Flera .gpkg-filer hittades, använder {gpkg_path.name}", on_log)
             else:
                 # === LOKAL FIL ===
                 local_path = Path(url)
@@ -67,22 +134,20 @@ class ZipGeoPackagePlugin(SourcePlugin):
                     )
                 self._log(f"Läser lokal fil {local_path.name}...", on_log)
                 self._progress(0.5, f"Läser {local_path.name}...", on_progress)
-                zip_path = str(local_path)
-                cleanup_zip = False  # Behåll originalfilen
 
-            self._log("Extraherar GeoPackage...", on_log)
-            self._progress(0.6, "Extraherar zip-arkiv...", on_progress)
+                # Extrahera lokal fil till temp-katalog
+                self._log("Extraherar GeoPackage...", on_log)
+                self._progress(0.6, "Extraherar zip-arkiv...", on_progress)
 
-            # Extrahera zip
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                with zipfile.ZipFile(zip_path, "r") as zf:
-                    zf.extractall(tmp_dir)
+                extract_dir = tempfile.mkdtemp(prefix="g-etl-gpkg-local-")
+                with zipfile.ZipFile(str(local_path), "r") as zf:
+                    zf.extractall(extract_dir)
 
                 # Hitta .gpkg-fil
                 if gpkg_filename:
-                    gpkg_path = Path(tmp_dir) / gpkg_filename
+                    gpkg_path = Path(extract_dir) / gpkg_filename
                 else:
-                    gpkg_files = list(Path(tmp_dir).rglob("*.gpkg"))
+                    gpkg_files = list(Path(extract_dir).rglob("*.gpkg"))
                     if not gpkg_files:
                         return ExtractResult(
                             success=False,
@@ -92,54 +157,66 @@ class ZipGeoPackagePlugin(SourcePlugin):
                     if len(gpkg_files) > 1:
                         self._log(f"Flera .gpkg-filer hittades, använder {gpkg_path.name}", on_log)
 
-                if not gpkg_path.exists():
-                    return ExtractResult(
-                        success=False,
-                        message=f"GeoPackage-filen finns inte: {gpkg_path}",
+            if not gpkg_path.exists():
+                return ExtractResult(
+                    success=False,
+                    message=f"GeoPackage-filen finns inte: {gpkg_path}",
+                )
+
+            # Lista tillgängliga lager i GeoPackage
+            try:
+                layers_result = conn.execute(
+                    f"SELECT name FROM st_layers('{gpkg_path}')"
+                ).fetchall()
+                available_layers = [row[0] for row in layers_result]
+                if len(available_layers) > 1:
+                    self._log(
+                        f"⚠️  {gpkg_path.name} har {len(available_layers)} lager: {', '.join(available_layers)}",
+                        on_log,
                     )
-
-                self._log(f"Läser {gpkg_path.name}...", on_log)
-                self._progress(0.7, f"Läser {gpkg_path.name}...", on_progress)
-
-                # Försök läsa med DuckDB ST_Read först
-                try:
-                    if layer:
-                        read_expr = f"ST_Read('{gpkg_path}', layer='{layer}')"
-                    else:
-                        read_expr = f"ST_Read('{gpkg_path}')"
-
-                    conn.execute(f"""
-                        CREATE OR REPLACE TABLE raw.{table_name} AS
-                        SELECT * FROM {read_expr}
-                    """)
-                except Exception as st_read_error:
-                    # Fallback: Använd geopandas för komplexa geometrier (MULTISURFACE etc)
-                    if "MULTISURFACE" in str(st_read_error) or "not supported" in str(st_read_error):
-                        self._log("ST_Read misslyckades, använder geopandas...", on_log)
-                        rows_count = self._read_with_geopandas(
-                            conn, gpkg_path, table_name, layer, on_log
+                    if not layer:
+                        self._log(
+                            f"   Använder första lagret: {available_layers[0]} (sätt 'layer' i config för specifikt lager)",
+                            on_log,
                         )
-                        if rows_count is not None:
-                            # Hoppa till rensning och returnera
-                            if cleanup_zip:
-                                Path(zip_path).unlink(missing_ok=True)
-                            self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
-                            self._progress(1.0, f"Läste {rows_count} rader", on_progress)
-                            return ExtractResult(
-                                success=True,
-                                rows_count=rows_count,
-                                message=f"Läste {rows_count} rader från {gpkg_path.name} (via geopandas)",
-                            )
-                    raise  # Kasta vidare om det inte var geometri-problem
+            except Exception:
+                pass  # st_layers fungerar inte alltid, ignorera
 
-                self._progress(0.9, "Räknar rader...", on_progress)
+            self._log(f"Läser {gpkg_path.name}...", on_log)
+            self._progress(0.7, f"Läser {gpkg_path.name}...", on_progress)
 
-                result = conn.execute(f"SELECT COUNT(*) FROM raw.{table_name}").fetchone()
-                rows_count = result[0] if result else 0
+            # Försök läsa med DuckDB ST_Read först
+            try:
+                if layer:
+                    read_expr = f"ST_Read('{gpkg_path}', layer='{layer}')"
+                else:
+                    read_expr = f"ST_Read('{gpkg_path}')"
 
-            # Rensa temp-fil endast om det var en nedladdning
-            if cleanup_zip:
-                Path(zip_path).unlink(missing_ok=True)
+                conn.execute(f"""
+                    CREATE OR REPLACE TABLE raw.{table_name} AS
+                    SELECT * FROM {read_expr}
+                """)
+            except Exception as st_read_error:
+                # Fallback: Använd geopandas för komplexa geometrier (MULTISURFACE etc)
+                if "MULTISURFACE" in str(st_read_error) or "not supported" in str(st_read_error):
+                    self._log("ST_Read misslyckades, använder geopandas...", on_log)
+                    rows_count = self._read_with_geopandas(
+                        conn, gpkg_path, table_name, layer, on_log
+                    )
+                    if rows_count is not None:
+                        self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
+                        self._progress(1.0, f"Läste {rows_count} rader", on_progress)
+                        return ExtractResult(
+                            success=True,
+                            rows_count=rows_count,
+                            message=f"Läste {rows_count} rader från {gpkg_path.name} (via geopandas)",
+                        )
+                raise  # Kasta vidare om det inte var geometri-problem
+
+            self._progress(0.9, "Räknar rader...", on_progress)
+
+            result = conn.execute(f"SELECT COUNT(*) FROM raw.{table_name}").fetchone()
+            rows_count = result[0] if result else 0
 
             self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
             self._progress(1.0, f"Läste {rows_count} rader", on_progress)

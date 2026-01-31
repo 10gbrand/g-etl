@@ -1,0 +1,48 @@
+# Dockerfile för Nuitka-bygge av G-ETL Admin TUI (Linux x86_64)
+FROM python:3.12-bookworm
+
+# Installera build-verktyg och GDAL
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    ccache \
+    patchelf \
+    gdal-bin \
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Installera Python dependencies
+COPY pyproject.toml /app/
+RUN pip install uv && \
+    uv pip install --system nuitka
+
+# Kopiera källkod
+COPY scripts/ /app/scripts/
+COPY plugins/ /app/plugins/
+COPY config/ /app/config/
+COPY sql/ /app/sql/
+
+# Installera app dependencies
+RUN uv pip install --system \
+    textual duckdb pyyaml jinja2 rich h3 \
+    geopandas pyarrow requests shapely fiona
+
+# Bygg med Nuitka
+RUN python -m nuitka \
+    --standalone \
+    --onefile \
+    --output-dir=/build \
+    --include-data-dir=config=config \
+    --include-data-dir=sql=sql \
+    --nofollow-import-to=pytest \
+    --nofollow-import-to=setuptools \
+    --assume-yes-for-downloads \
+    scripts/admin/app.py
+
+# Kopiera resultat
+RUN mkdir -p /output && cp /build/app.bin /output/g_etl 2>/dev/null || \
+    cp /build/*.bin /output/ 2>/dev/null || \
+    find /build -type f -executable -exec cp {} /output/ \; 2>/dev/null || true
+
+CMD ["ls", "-la", "/output"]

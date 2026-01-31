@@ -158,17 +158,57 @@ datasets:
       klass: frotaktsomrade
       leverantor: sks
 
-  - id: skogshistorisk_karta
-    name: Skogshistorisk_karta
-    description: Skogshistoriska data från Skogsstyrelsen
+  - id: skog_o_historia_yta
+    name: Skog & historia - Ytor
+    description: Skogshistoriska ytor (polygoner) från Skogsstyrelsen
     typ: skogsstyrelsen_gpkg
     plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogshistoriskKarta_gpkg.zip
-    enabled: false
-    status: källan finns ej
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+    layer: SkogoHistoriaYta
+    enabled: true
     field_mapping:
-      klass: skogshistorisk
+      source_id_column: $Objektnr
+      klass: skogshistorisk_yta
       leverantor: sks
+
+  - id: skog_o_historia_pkt
+    name: Skog & historia - Punkter
+    description: Skogshistoriska punkter från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+    layer: SkogoHistoriaPkt
+    enabled: true
+    field_mapping:
+      source_id_column: $Objektnr
+      klass: skogshistorisk_punkt
+      leverantor: sks
+
+  - id: skog_o_historia_linje
+    name: Skog & historia - Linjer
+    description: Skogshistoriska linjer från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+    layer: SkogoHistoriaLinje
+    enabled: true
+    field_mapping:
+      source_id_column: $Objektnr
+      klass: skogshistorisk_linje
+      leverantor: sks
+
+  - id: fornlamning
+    name: Riksantikvarieämbetet
+    description: Riksantikvarieämbetet
+    typ: raa_gpkg
+    plugin: zip_geopackage
+    url: https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
+    #layer: SkogoHistoriaLinje
+    enabled: true
+    field_mapping:
+      source_id_column: $Objektnr
+      klass: fornlamning
+      leverantor: raa
 
   # ============================================================================
   # NATURVÅRDSVERKET (nvv)

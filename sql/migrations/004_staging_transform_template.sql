@@ -13,7 +13,7 @@
 --   _centroid_lat    - Centroid latitud (WGS84)
 --   _centroid_lng    - Centroid longitud (WGS84)
 --   _h3_index        - H3-cell för centroid
---   _h3_cells        - Alla H3-celler inom ytan
+--   _h3_cells        - Alla H3-celler (polygon: polyfill, linje: buffrad, punkt: enkel cell)
 --   _a5_index        - A5-cell (reserverad)
 
 CREATE OR REPLACE TABLE staging.{{ dataset_id }} AS
@@ -63,14 +63,41 @@ SELECT
         {{ h3_center_resolution }}
     ) AS _h3_index,
 
-    -- H3 polyfill - alla celler inom polygonen
-    to_json(h3_polygon_wkt_to_cells_string(
-        ST_AsText(ST_Transform(s.geom,
-            '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
-            '+proj=longlat +datum=WGS84 +no_defs +type=crs'
-        )),
-        {{ h3_polyfill_resolution }}
-    ))::VARCHAR AS _h3_cells,
+    -- H3 cells - anpassat efter geometrityp (polygon, linje, punkt)
+    CASE
+        -- POLYGON/MULTIPOLYGON: polyfill hela ytan
+        WHEN ST_GeometryType(s.geom) IN ('POLYGON', 'MULTIPOLYGON') THEN
+            to_json(h3_polygon_wkt_to_cells_string(
+                ST_AsText(ST_Transform(s.geom,
+                    '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
+                    '+proj=longlat +datum=WGS84 +no_defs +type=crs'
+                )),
+                {{ h3_polyfill_resolution }}
+            ))::VARCHAR
+        -- LINESTRING/MULTILINESTRING: buffra linjen och polyfill
+        WHEN ST_GeometryType(s.geom) IN ('LINESTRING', 'MULTILINESTRING') THEN
+            to_json(h3_polygon_wkt_to_cells_string(
+                ST_AsText(ST_Transform(ST_Buffer(s.geom, {{ h3_line_buffer_meters }}),
+                    '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
+                    '+proj=longlat +datum=WGS84 +no_defs +type=crs'
+                )),
+                {{ h3_line_resolution }}
+            ))::VARCHAR
+        -- POINT/MULTIPOINT: returnera enkel cell som array
+        WHEN ST_GeometryType(s.geom) IN ('POINT', 'MULTIPOINT') THEN
+            to_json([h3_latlng_to_cell_string(
+                ST_Y(ST_Centroid(ST_Transform(s.geom,
+                    '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
+                    '+proj=longlat +datum=WGS84 +no_defs +type=crs'
+                ))),
+                ST_X(ST_Centroid(ST_Transform(s.geom,
+                    '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
+                    '+proj=longlat +datum=WGS84 +no_defs +type=crs'
+                ))),
+                {{ h3_point_resolution }}
+            )])::VARCHAR
+        ELSE NULL
+    END AS _h3_cells,
 
     -- A5 (reserverad)
     NULL::VARCHAR AS _a5_index

@@ -42,7 +42,8 @@ class DatasetRow(Static):
 
     DEFAULT_CSS = """
     DatasetRow {
-        height: 2;
+        height: auto;
+        min-height: 2;
         padding: 0 1;
     }
 
@@ -157,7 +158,7 @@ class PipelineScreen(Screen):
     #main-content {
         layout: grid;
         grid-size: 2 1;
-        grid-columns: 1fr 1fr;
+        grid-columns: 55 1fr;
         height: 1fr;
     }
 
@@ -614,6 +615,7 @@ class PipelineScreen(Screen):
             # Kör parallell transform (raw → staging → staging_2 → mart per dataset)
             temp_dbs = await self.runner.run_parallel_transform(
                 parquet_files=all_parquet_files,
+                phases=(run_staging, run_staging2, run_mart),
                 on_log=lambda msg: self.log_message(msg),
                 on_event=on_transform_event,
             )

@@ -40,6 +40,9 @@ class DatasetConfig:
     geometry_column: str = "geom"
     h3_center_resolution: int = 13
     h3_polyfill_resolution: int = 11
+    h3_line_resolution: int = 12
+    h3_point_resolution: int = 13
+    h3_line_buffer_meters: int = 10
     klass: str = ""
     grupp: str = ""
     typ: str = ""
@@ -59,6 +62,9 @@ class DatasetConfig:
             geometry_column=fm.get("geometry_column", "geom"),
             h3_center_resolution=fm.get("h3_center_resolution", 13),
             h3_polyfill_resolution=fm.get("h3_polyfill_resolution", 11),
+            h3_line_resolution=fm.get("h3_line_resolution", 12),
+            h3_point_resolution=fm.get("h3_point_resolution", 13),
+            h3_line_buffer_meters=fm.get("h3_line_buffer_meters", 10),
             klass=fm.get("klass", ""),
             grupp=fm.get("grupp", ""),
             typ=fm.get("typ", ""),
@@ -126,6 +132,9 @@ class SQLGenerator:
             "geometry_column": config.geometry_column,
             "h3_center_resolution": str(config.h3_center_resolution),
             "h3_polyfill_resolution": str(config.h3_polyfill_resolution),
+            "h3_line_resolution": str(config.h3_line_resolution),
+            "h3_point_resolution": str(config.h3_point_resolution),
+            "h3_line_buffer_meters": str(config.h3_line_buffer_meters),
             "klass": config.klass,
             "leverantor": config.leverantor,
         }

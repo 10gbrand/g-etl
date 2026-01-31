@@ -34,8 +34,12 @@ class Settings:
     # Se: https://h3geo.org/docs/core-library/restable/
     # Resolution 13 ≈ 43.9 m² per cell (för centroid-index)
     # Resolution 11 ≈ 2149 m² per cell (för polyfill, större celler inom polygoner)
+    # Resolution 12 ≈ 307 m² per cell (för linjer/punkter, högre precision)
     H3_RESOLUTION: int = 13  # För _h3_index (centroid)
-    H3_POLYFILL_RESOLUTION: int = 11  # För _h3_cells (polyfill)
+    H3_POLYFILL_RESOLUTION: int = 11  # För _h3_cells (polyfill av polygoner)
+    H3_LINE_RESOLUTION: int = 12  # För _h3_cells (linjer, buffrad)
+    H3_POINT_RESOLUTION: int = 13  # För _h3_cells (punkter)
+    H3_LINE_BUFFER_METERS: int = 10  # Buffer-radie för linjer i meter
 
     # === Pipeline ===
     # Auto-detekterade baserat på CPU-kärnor

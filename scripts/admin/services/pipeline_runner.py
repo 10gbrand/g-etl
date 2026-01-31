@@ -9,7 +9,7 @@ import duckdb
 import yaml
 
 from config.settings import settings
-from plugins import get_plugin
+from plugins import clear_download_cache, get_plugin
 from scripts.migrations.migrator import Migrator, MigrationStatus
 from scripts.sql_generator import SQLGenerator
 
@@ -430,6 +430,9 @@ class PipelineRunner:
         tasks = [extract_one(config) for config in dataset_configs]
         results = await asyncio.gather(*tasks)
 
+        # Rensa nedladdningscache (friggör temp-filer)
+        clear_download_cache()
+
         # Sammanställ resultat
         parquet_files = [(r[0], r[1]) for r in results if r[1] is not None]
         failed = [(r[0], r[2]) for r in results if r[2] is not None]
@@ -717,10 +720,11 @@ class PipelineRunner:
     async def run_parallel_transform(
         self,
         parquet_files: list[tuple[str, str]],
+        phases: tuple[bool, bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> list[tuple[str, str]]:
-        """Kör alla templates parallellt med separata temp-DBs per dataset.
+        """Kör valda templates parallellt med separata temp-DBs per dataset.
 
         Varje dataset får sin egen DuckDB-fil för äkta parallelism utan
         fillåsningscontention. Returnerar lista med (dataset_id, temp_db_path)
@@ -728,6 +732,8 @@ class PipelineRunner:
 
         Args:
             parquet_files: Lista av (dataset_id, parquet_path)
+            phases: Tuple med (staging, staging2, mart) - vilka faser som ska köras
+                    Om None körs alla faser.
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
 
@@ -738,8 +744,24 @@ class PipelineRunner:
         datasets_config = self._load_datasets_config()
         all_templates = generator.list_templates()
 
-        # Sortera templates i körordning
-        templates = sorted(all_templates)
+        # Filtrera templates baserat på valda faser
+        run_staging, run_staging2, run_mart = phases if phases else (True, True, True)
+        templates = []
+        for t in sorted(all_templates):
+            t_lower = t.lower()
+            # staging2 måste checkas först (annars matchar staging)
+            if "_staging2_" in t_lower or "_staging_2_" in t_lower:
+                if run_staging2:
+                    templates.append(t)
+            elif "_staging_" in t_lower:
+                if run_staging:
+                    templates.append(t)
+            elif "_mart_" in t_lower:
+                if run_mart:
+                    templates.append(t)
+            else:
+                # Övriga templates körs alltid
+                templates.append(t)
 
         # Bygg mapping från template-namn till Migration-objekt för spårning
         conn = self._get_connection()
@@ -755,7 +777,15 @@ class PipelineRunner:
 
         if on_log:
             cpu_count = settings.MAX_CONCURRENT_SQL
+            phases_str = ", ".join([
+                p for p, enabled in [
+                    ("Staging", run_staging),
+                    ("Staging_2", run_staging2),
+                    ("Mart", run_mart),
+                ] if enabled
+            ])
             on_log(f"=== Parallell transform: {len(parquet_files)} datasets, {cpu_count} parallella ===")
+            on_log(f"    Faser: {phases_str} ({len(templates)} templates)")
 
         async def process_dataset(dataset_id: str, parquet_path: str) -> tuple[str, str, bool]:
             """Processa ett dataset i egen temp-DB."""
@@ -1331,12 +1361,22 @@ class MockPipelineRunner(PipelineRunner):
     async def run_parallel_transform(
         self,
         parquet_files: list[tuple[str, str]],
+        phases: tuple[bool, bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> list[tuple[str, str]]:
         """Mock parallell transform."""
+        run_staging, run_staging2, run_mart = phases if phases else (True, True, True)
+        phases_str = ", ".join([
+            p for p, enabled in [
+                ("Staging", run_staging),
+                ("Staging_2", run_staging2),
+                ("Mart", run_mart),
+            ] if enabled
+        ])
         if on_log:
             on_log(f"[MOCK] === Parallell transform: {len(parquet_files)} datasets ===")
+            on_log(f"[MOCK]     Faser: {phases_str}")
 
         results = []
         for dataset_id, parquet_path in parquet_files:
