@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Data and databases
+data/
+*.duckdb
+*.duckdb.wal
+logs/
+
+# IDE
+.idea
+.vscode
+
+# Build artifacts
+build/
+dist/
+*.egg-info
+
+# macOS
+.DS_Store
+
+# Docs and tests (not needed in image)
+docs/
+tests/
+*.md
+!README.md
+
+# Local config
+.env
+.envrc
+
+# Backup
+*.backup

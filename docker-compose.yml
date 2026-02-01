@@ -1,0 +1,24 @@
+# G-ETL Docker Compose
+#
+# Kör med: docker compose up -d
+# Stoppa:  docker compose down
+#
+# För interaktiv TUI: docker compose run --rm admin
+
+services:
+  admin:
+    image: ghcr.io/10gbrand/g-etl:latest
+    volumes:
+      # Data persistence
+      - ./data:/app/data
+      # Custom config (valfritt)
+      - ./config:/app/config:ro
+      # Custom SQL (valfritt)
+      - ./sql:/app/sql:ro
+    environment:
+      # Lantmäteriet API (valfritt)
+      - LM_API_KEY=${LM_API_KEY:-}
+      - LM_API_SECRET=${LM_API_SECRET:-}
+    # Krävs för TUI
+    tty: true
+    stdin_open: true

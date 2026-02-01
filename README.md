@@ -2,8 +2,73 @@
 
 En ETL-stack för svenska geodata med DuckDB som analytisk motor, H3 spatial indexering och plugin-baserad datahämtning.
 
-![TUI](./docs/images/TUI.png)
 ![TUI-explorer](./docs/images/TUI-explorer.png)
+
+## Snabbstart
+
+### Docker (enklast)
+
+```bash
+# Ladda ner docker-compose och kör
+curl -LO https://raw.githubusercontent.com/10gbrand/g-etl/main/docker-compose.yml
+docker compose run --rm admin
+```
+
+Data sparas i `./data/` och konfiguration kan anpassas i `./config/`.
+
+### TUI (lokal installation)
+
+```bash
+# Klona och installera
+git clone https://github.com/10gbrand/g-etl.git
+cd g-etl
+pip install uv
+uv sync
+
+# Starta TUI
+uv run python -m g_etl.admin.app
+
+# Eller med task runner
+task admin:run
+```
+
+### CLI
+
+```bash
+# Kör hela pipelinen (extract + transform)
+task pipeline:run
+
+# Endast extract (hämta data)
+task pipeline:extract
+
+# Endast transform (SQL-transformationer)
+task pipeline:transform
+
+# Specifikt dataset
+task pipeline:dataset -- naturreservat
+
+# Datasets av viss typ
+task pipeline:type -- skogsstyrelsen_gpkg
+```
+
+### Förbyggd binär
+
+Ladda ner kompilerad binär utan Python-beroenden:
+
+```bash
+# macOS (Apple Silicon)
+curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-macos-arm64.tar.gz
+
+# Linux x86_64
+curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-linux-x86_64.tar.gz
+
+# Linux ARM64
+curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-linux-arm64.tar.gz
+
+# Packa upp och kör
+tar -xzf g_etl-*.tar.gz
+./g_etl
+```
 
 ## Pipeline-översikt
 
@@ -404,24 +469,23 @@ Arkivet innehåller:
 - `config/` – Konfiguration (datasets.yml, settings.py)
 - `sql/` – SQL-templates för transformationer
 
-#### Alternativ 2: Docker (förbyggd binär)
+#### Alternativ 2: Docker
 
-Kör i Docker utan lokal installation:
+Kör med publicerad Docker image:
 
 ```bash
-# ARM64 (t.ex. AWS Graviton, Raspberry Pi)
-docker compose -f docker/docker-compose.runtime.yml build
-docker compose -f docker/docker-compose.runtime.yml run --rm g-etl
+# Enklaste sättet - använd docker-compose.yml
+curl -LO https://raw.githubusercontent.com/10gbrand/g-etl/main/docker-compose.yml
+docker compose run --rm admin
 
-# x86_64 (vanliga servrar)
-ARCH=linux-x86_64 docker compose -f docker/docker-compose.runtime.yml build
-docker compose -f docker/docker-compose.runtime.yml run --rm g-etl
+# Eller direkt med docker
+docker run -it -v $(pwd)/data:/app/data ghcr.io/10gbrand/g-etl:latest
 
 # Specifik version
-VERSION=v0.1.0 docker compose -f docker/docker-compose.runtime.yml build
+docker pull ghcr.io/10gbrand/g-etl:1.0.0
 ```
 
-Data sparas i Docker-volymen `g-etl-data`.
+Data sparas i `./data/` katalogen.
 
 #### Alternativ 3: Devbox
 
