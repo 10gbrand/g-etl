@@ -237,12 +237,39 @@ datasets:
       klass: naturreservat
       leverantor: nvv
 
-  - id: natura2000_sci
-    name: Natura2000_SCI
+  - id: natura2000_sci_ac
+    name: Natura2000_SCI AC
     description: Natura2000 från naturvardsverket, kod 103 i GISS
     typ: naturvardsverket_shp
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+    shp_filname: SCI_AC_lan.shp
+    enabled: true
+    field_mapping:
+      source_id_column: $SITE_CODE
+      klass: natura2000_sci
+      leverantor: nvv
+
+  - id: natura2000_sci_alvar_bd
+    name: Natura2000_SCI alvar BD
+    description: Natura2000 från naturvardsverket, kod 103 i GISS
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+    shp_filname: SCI_alvar_BD_lan.shp
+    enabled: true
+    field_mapping:
+      source_id_column: $SITE_CODE
+      klass: natura2000_sci
+      leverantor: nvv
+
+  - id: natura2000_sci_ej_alvar_rikstackande
+    name: Natura2000_SCI ej alvar rikstäckande
+    description: Natura2000 från naturvardsverket, kod 103 i GISS
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+    shp_filname: SCI_ej_alvar_rikstackande.shp
     enabled: true
     field_mapping:
       source_id_column: $SITE_CODE
@@ -321,12 +348,26 @@ datasets:
       klass: kulturreservat
       leverantor: nvv
 
-  - id: naturminnen
-    name: Naturminnen
+  - id: naturminnen_punkt
+    name: Naturminnen punkt
     description: Naturminnen från Naturvårdsverket
     typ: naturvardsverket_shp
     plugin: zip_shapefile
     url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
+    shp_filename: NM_point.shp
+    enabled: true
+    field_mapping:
+      source_id_column: $NVRID
+      klass: naturminne
+      leverantor: nvv
+
+  - id: naturminnen_ytor
+    name: Naturminnen ytor
+    description: Naturminnen från Naturvårdsverket
+    typ: naturvardsverket_shp
+    plugin: zip_shapefile
+    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
+    shp_filename: NM_polygon.shp
     enabled: true
     field_mapping:
       source_id_column: $NVRID

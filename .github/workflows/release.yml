@@ -117,8 +117,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
-    name: Build macOS binary
-    runs-on: macos-latest
+    name: Build macOS ARM64 binary
+    runs-on: macos-14  # Apple Silicon (ARM64)
 
     steps:
       - name: Checkout
