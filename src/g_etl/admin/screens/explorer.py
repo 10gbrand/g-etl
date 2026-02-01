@@ -1,4 +1,4 @@
-"""Data Explorer screen med ASCII-karta för geometrivalidering."""
+"""Data Explorer screen with ASCII map for geometry validation."""
 
 import duckdb
 from textual import work

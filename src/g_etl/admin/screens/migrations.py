@@ -1,7 +1,7 @@
-"""Migrations screen för TUI.
+"""Migrations screen for TUI.
 
-Visar status för databasmigrationer och låter användaren
-köra migrationer och rollbacks.
+Shows status for database migrations and allows the user
+to run migrations and rollbacks.
 """
 
 from datetime import datetime

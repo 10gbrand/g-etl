@@ -1,8 +1,17 @@
 """G-ETL Admin TUI Application.
 
-En terminalbaserad applikation för att köra och övervaka ETL-pipelines
-med Docker-stil multi-progress och geometri-validering via ASCII-kartor.
+Terminal-based application for running and monitoring ETL pipelines
+with Docker-style multi-progress and geometry validation via ASCII maps.
 """
+
+import os
+import sys
+
+# Force UTF-8 encoding for standalone binary
+if not sys.stdout.encoding or sys.stdout.encoding.lower() != "utf-8":
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    os.environ.setdefault("LC_ALL", "C.UTF-8")
+    os.environ.setdefault("LANG", "C.UTF-8")
 
 from textual.app import App
 
@@ -14,7 +23,7 @@ from g_etl.admin.services.db_session import cleanup_old_databases, get_session_d
 
 
 class AdminApp(App):
-    """G-ETL Admin TUI Application med stöd för flera screens."""
+    """G-ETL Admin TUI Application with support for multiple screens."""
 
     TITLE = "G-ETL Admin"
     SUB_TITLE = "Pipeline & Data Explorer"
@@ -36,16 +45,16 @@ class AdminApp(App):
         self.config = DatasetConfig.load(config_path)
         self.mock_mode = mock
 
-        # Skapa ny sessionsspecifik databas
+        # Create new session-specific database
         self.db_path = str(get_session_db_path())
 
-        # Rensa gamla databasfiler (behåll 3 senaste)
+        # Clean up old database files (keep 3 most recent)
         cleanup_old_databases(keep_count=3)
 
     def on_mount(self) -> None:
-        """Installera screens och visa pipeline-screen."""
-        # Registrera screens med factory-funktioner för lazy loading
-        # Alla screens delar samma databas-sökväg
+        """Install screens and show pipeline screen."""
+        # Register screens with factory functions for lazy loading
+        # All screens share the same database path
         self.install_screen(
             lambda: PipelineScreen(config=self.config, mock=self.mock_mode, db_path=self.db_path),
             name="pipeline",
@@ -59,12 +68,12 @@ class AdminApp(App):
             name="migrations",
         )
 
-        # Visa pipeline-screen som standard
+        # Show pipeline screen as default
         self.push_screen("pipeline")
 
 
 def main() -> None:
-    """Starta Admin TUI."""
+    """Start Admin TUI."""
     import argparse
 
     parser = argparse.ArgumentParser(description="G-ETL Admin TUI")

@@ -1,4 +1,4 @@
-"""Pipeline screen med Docker-stil multi-progress."""
+"""Pipeline screen with Docker-style multi-progress."""
 
 from datetime import datetime
 

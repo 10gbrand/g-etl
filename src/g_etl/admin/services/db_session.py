@@ -1,4 +1,4 @@
-"""Databashantering med sessionsbaserade DuckDB-filer."""
+"""Database management with session-based DuckDB files."""
 
 from datetime import datetime
 from pathlib import Path
