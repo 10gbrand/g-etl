@@ -2,6 +2,7 @@
 
 En ETL-stack för svenska geodata med DuckDB som analytisk motor, H3 spatial indexering och plugin-baserad datahämtning.
 
+![TUI](./docs/images/TUI.png)
 ![TUI-explorer](./docs/images/TUI-explorer.png)
 
 ## Snabbstart
