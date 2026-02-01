@@ -199,11 +199,10 @@ datasets:
 
   - id: fornlamning
     name: Riksantikvarieämbetet
-    description: Riksantikvarieämbetet
+    description: Fornlämningar från Riksantikvarieämbetet
     typ: raa_gpkg
-    plugin: zip_geopackage
+    plugin: geopackage
     url: https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
-    #layer: SkogoHistoriaLinje
     enabled: true
     field_mapping:
       source_id_column: $Objektnr

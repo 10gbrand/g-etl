@@ -1,6 +1,8 @@
 """G-ETL Source Plugins."""
 
 from g_etl.plugins.base import SourcePlugin
+from g_etl.plugins.geopackage import GeoPackagePlugin
+from g_etl.plugins.geopackage import clear_download_cache as _clear_gpkg_direct_cache
 from g_etl.plugins.geoparquet import GeoParquetPlugin
 from g_etl.plugins.lantmateriet import LantmaterietPlugin
 from g_etl.plugins.wfs import WfsPlugin
@@ -14,11 +16,13 @@ def clear_download_cache() -> None:
     """Rensa alla nedladdningscacher (GeoPackage och Shapefile)."""
     _clear_gpkg_cache()
     _clear_shp_cache()
+    _clear_gpkg_direct_cache()
 
 
 PLUGINS: dict[str, type[SourcePlugin]] = {
     "wfs": WfsPlugin,
     "lantmateriet": LantmaterietPlugin,
+    "geopackage": GeoPackagePlugin,
     "geoparquet": GeoParquetPlugin,
     "zip_geopackage": ZipGeoPackagePlugin,
     "zip_shapefile": ZipShapefilePlugin,
