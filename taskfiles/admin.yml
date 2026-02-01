@@ -1,0 +1,20 @@
+version: '3'
+
+tasks:
+  run:
+    desc: Starta admin TUI lokalt
+    cmds:
+      - uv run python -m g_etl.admin.app
+
+  mock:
+    desc: Starta admin TUI i mock-läge
+    cmds:
+      - uv run python -m g_etl.admin.app --mock
+
+  build:
+    desc: Bygg lokal binär med Nuitka i Docker
+    cmds:
+      - docker build -f Dockerfile.nuitka -t g-etl-nuitka .
+      - mkdir -p dist/nuitka
+      - docker run --rm -v {{.USER_WORKING_DIR}}/dist/nuitka:/output g-etl-nuitka cp /app/g_etl /output/g_etl
+      - 'echo "Binary created: dist/nuitka/g_etl"'

@@ -1,0 +1,42 @@
+# Minimal runtime-image för G-ETL binär
+# Laddar ner förbyggd binär från GitHub Release
+#
+# Användning:
+#   docker build -f docker/Dockerfile.runtime -t g-etl .
+#   docker run -it --rm -v $(pwd)/data:/app/data g-etl
+
+ARG ARCH=linux-arm64
+ARG VERSION=latest
+
+FROM debian:bookworm-slim
+
+ARG ARCH
+ARG VERSION
+
+WORKDIR /app
+
+# Installera curl för nedladdning + minimal runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ladda ner binär från GitHub Release
+RUN if [ "$VERSION" = "latest" ]; then \
+        DOWNLOAD_URL="https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-${ARCH}.tar.gz"; \
+    else \
+        DOWNLOAD_URL="https://github.com/10gbrand/g-etl/releases/download/${VERSION}/g_etl-${ARCH}.tar.gz"; \
+    fi && \
+    echo "Downloading from: $DOWNLOAD_URL" && \
+    curl -fsSL "$DOWNLOAD_URL" -o g_etl.tar.gz && \
+    tar -xzf g_etl.tar.gz && \
+    rm g_etl.tar.gz && \
+    chmod +x g_etl
+
+# Skapa data-katalog
+RUN mkdir -p data
+
+# Volym för persistent data
+VOLUME ["/app/data"]
+
+CMD ["./g_etl"]

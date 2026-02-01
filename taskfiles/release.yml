@@ -1,0 +1,74 @@
+version: '3'
+
+tasks:
+  check:
+    desc: Kontrollera status innan release
+    cmds:
+      - echo "=== Git status ==="
+      - git status --short
+      - echo ""
+      - echo "=== Senaste tags ==="
+      - git tag --sort=-v:refname | head -5
+      - echo ""
+      - echo "=== Senaste commits ==="
+      - git log --oneline -5
+
+  new:
+    desc: "Skapa ny release (ex: task release:new -- v0.1.2)"
+    vars:
+      VERSION: "{{.CLI_ARGS}}"
+    preconditions:
+      - sh: '[ -n "{{.VERSION}}" ]'
+        msg: "Fel: Ange version som argument. Exempel: task release:new -- v0.1.2"
+      - sh: git diff --quiet
+        msg: "Fel: Det finns uncommittade ändringar! Committa först."
+      - sh: git diff --cached --quiet
+        msg: "Fel: Det finns staged ändringar! Committa först."
+      - sh: command -v gh >/dev/null
+        msg: "Fel: GitHub CLI (gh) krävs. Installera med: brew install gh"
+    cmds:
+      - echo "=== Skapar release {{.VERSION}} ==="
+      - echo ""
+      - echo "1. Skapar GitHub Release med tag..."
+      - gh release create {{.VERSION}} --title "{{.VERSION}}" --generate-notes
+      - echo ""
+      - echo "=== Release {{.VERSION}} skapad! ==="
+      - echo ""
+      - echo "GitHub Actions bygger nu binärerna automatiskt."
+      - cmd: echo "Följ bygget på https://github.com/10gbrand/g-etl/actions"
+      - echo ""
+      - cmd: echo "Binärerna laddas upp till https://github.com/10gbrand/g-etl/releases/tag/{{.VERSION}}"
+
+  delete:
+    desc: "Ta bort en release (ex: task release:delete -- v0.1.2)"
+    vars:
+      VERSION: "{{.CLI_ARGS}}"
+    preconditions:
+      - sh: '[ -n "{{.VERSION}}" ]'
+        msg: "Fel: Ange version som argument. Exempel: task release:delete -- v0.1.2"
+      - sh: command -v gh >/dev/null
+        msg: "Fel: GitHub CLI (gh) krävs. Installera med: brew install gh"
+    cmds:
+      - echo "Tar bort GitHub Release {{.VERSION}}..."
+      - gh release delete {{.VERSION}} --yes || true
+      - echo "Tar bort lokal tag {{.VERSION}}..."
+      - git tag -d {{.VERSION}} || true
+      - echo "Tar bort remote tag {{.VERSION}}..."
+      - cmd: git push origin :refs/tags/{{.VERSION}} || true
+      - echo "Klar!"
+
+  trigger:
+    desc: "Trigga bygge för befintlig tag (ex: task release:trigger -- v0.1.2)"
+    vars:
+      VERSION: "{{.CLI_ARGS}}"
+    preconditions:
+      - sh: '[ -n "{{.VERSION}}" ]'
+        msg: "Fel: Ange version som argument. Exempel: task release:trigger -- v0.1.2"
+      - sh: command -v gh >/dev/null
+        msg: "Fel: GitHub CLI (gh) krävs. Installera med: brew install gh"
+    cmds:
+      - echo "Skapar GitHub Release för befintlig tag {{.VERSION}}..."
+      - gh release create {{.VERSION}} --title "{{.VERSION}}" --generate-notes
+      - echo ""
+      - echo "GitHub Actions triggas nu!"
+      - cmd: echo "Följ bygget på https://github.com/10gbrand/g-etl/actions"

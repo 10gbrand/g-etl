@@ -1,0 +1,15 @@
+Nationalparker, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NP.zip, 101
+Naturreservat, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NR.zip, 102
+Natura2000, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip, 103
+Natura2000, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip, 103
+Naturvardsavtal, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVA.zip, 104
+Naturvardsavtal, https://geodpags.skogsstyrelsen.se/geodataport/data/sksNaturvardsavtal_gpkg.zip, 104
+Biotopskydd, https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip, 105
+Biotopskydd, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/OBO.zip, 105
+VSO, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/VSO.zip, 106
+Vardefullavatten, http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows, 111
+Nyckelbiotoper, https://geodpags.skogsstyrelsen.se/geodataport/data/sksNyckelbiotoper_gpkg.zip, 112
+StorNyckelbiotoper, https://geodpags.skogsstyrelsen.se/geodataport/data/sksStorskogsbrNyckelb_gpkg.zip, 113
+Sumpskogar, https://geodpags.skogsstyrelsen.se/geodataport/data/sksSumpskogar_gpkg.zip, 114
+Forsok, https://wms.slu.se/silvaboreal/esf/ows, 116
+Naturvardsomrade, https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVO.zip, 118

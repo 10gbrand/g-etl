@@ -1,0 +1,47 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Installera Python-beroenden med UV
+    cmds:
+      - uv sync
+
+  test:
+    desc: Kör alla tester
+    cmds:
+      - uv run pytest tests/ -v
+
+  lint:
+    desc: Kör linting med ruff
+    cmds:
+      - uv run ruff check .
+
+  format:
+    desc: Formatera kod med ruff
+    cmds:
+      - uv run ruff format .
+
+  fix:
+    desc: Fixa formatering och lint-fel automatiskt
+    cmds:
+      - uv run ruff format .
+      - uv run ruff check . --fix
+
+  ci:
+    desc: Kör samma kontroller som CI (format, lint, test)
+    cmds:
+      - uv run ruff format --check .
+      - uv run ruff check .
+      - uv run pytest tests/ -v
+
+  precommit:
+    desc: Fixa och verifiera innan commit (format → lint → test)
+    cmds:
+      - echo "=== Fixar formatering och lint ==="
+      - uv run ruff format .
+      - uv run ruff check . --fix
+      - echo ""
+      - echo "=== Kör tester ==="
+      - uv run pytest tests/ -v
+      - echo ""
+      - echo "✓ Redo att committa!"

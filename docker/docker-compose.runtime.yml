@@ -1,0 +1,37 @@
+# Docker Compose för G-ETL runtime (förbyggd binär)
+#
+# Användning:
+#   # Bygg imagen (laddar ner binär från GitHub Release)
+#   docker compose -f docker/docker-compose.runtime.yml build
+#
+#   # Starta interaktivt
+#   docker compose -f docker/docker-compose.runtime.yml run --rm g-etl
+#
+#   # Bygg för specifik arkitektur/version
+#   ARCH=linux-x86_64 VERSION=v0.1.0 docker compose -f docker/docker-compose.runtime.yml build
+
+name: g-etl-runtime
+
+services:
+  g-etl:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.runtime
+      args:
+        ARCH: ${ARCH:-linux-arm64}
+        VERSION: ${VERSION:-latest}
+    volumes:
+      # Persistent data-katalog
+      - g-etl-data:/app/data
+      # Valfritt: egna config-filer (kommentera bort för att använda inbyggda)
+      # - ./config:/app/config:ro
+      # - ./sql:/app/sql:ro
+    env_file:
+      - path: ../.env
+        required: false
+    tty: true
+    stdin_open: true
+
+volumes:
+  g-etl-data:
+    name: g-etl-data

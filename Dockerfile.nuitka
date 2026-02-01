@@ -1,0 +1,88 @@
+# Dockerfile för Nuitka-bygge av G-ETL Admin TUI (Linux x86_64)
+# Multi-stage build för att minimera storlek
+#
+# Geopandas/pyarrow är nu optional (lazy import) och exkluderas.
+# De flesta datasets fungerar utan dem - de behövs bara för:
+# - MULTISURFACE-geometrier i GeoPackage (sällsynt)
+# - Encoding-problem i Shapefiles (sällsynt, DuckDB hanterar ofta detta)
+
+# === Stage 1: Bygg med Nuitka ===
+FROM python:3.12-bookworm AS builder
+
+# Installera build-verktyg
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    ccache \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Installera Nuitka först
+RUN pip install uv && \
+    uv pip install --system nuitka ordered-set zstandard
+
+# Installera ENDAST dependencies som TUI:n faktiskt behöver
+# (exkluderar geopandas, pyarrow, shapely - dessa är för plugins)
+RUN uv pip install --system \
+    textual \
+    duckdb \
+    pyyaml \
+    jinja2 \
+    rich \
+    h3 \
+    requests \
+    python-dotenv \
+    pytz
+
+# Kopiera källkod
+COPY src/g_etl/ /app/g_etl/
+COPY config/ /app/config/
+COPY sql/ /app/sql/
+
+# Bygg med Nuitka - exkludera tunga moduler
+RUN python -m nuitka \
+    --standalone \
+    --onefile \
+    --output-dir=/build \
+    --include-data-dir=config=config \
+    --include-data-dir=sql=sql \
+    --nofollow-import-to=pytest \
+    --nofollow-import-to=setuptools \
+    --nofollow-import-to=geopandas \
+    --nofollow-import-to=pandas \
+    --nofollow-import-to=pyarrow \
+    --nofollow-import-to=shapely \
+    --nofollow-import-to=fiona \
+    --nofollow-import-to=numpy \
+    --nofollow-import-to=scipy \
+    --nofollow-import-to=matplotlib \
+    --nofollow-import-to=PIL \
+    --nofollow-import-to=cv2 \
+    --nofollow-import-to=torch \
+    --nofollow-import-to=tensorflow \
+    --nofollow-import-to=pyodbc \
+    --assume-yes-for-downloads \
+    --remove-output \
+    g_etl/admin/app.py
+
+# === Stage 2: Minimal runtime image ===
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libgcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Kopiera endast den kompilerade binären
+COPY --from=builder /build/app.bin /app/g_etl
+
+# Kopiera config och sql (behövs vid runtime)
+COPY --from=builder /app/config /app/config
+COPY --from=builder /app/sql /app/sql
+
+# Sätt executable
+RUN chmod +x /app/g_etl
+
+CMD ["/app/g_etl"]

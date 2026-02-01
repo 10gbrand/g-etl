@@ -1,0 +1,15 @@
+name: g-etl
+
+services:
+  admin:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.admin
+    volumes:
+      - ../data:/app/data
+      - ../config:/app/config
+      - ../sql:/app/sql
+    env_file:
+      - ../.env
+    tty: true
+    stdin_open: true

@@ -1,0 +1,23 @@
+version: "3"
+
+includes:
+  py: ./taskfiles/python.yml
+  admin: ./taskfiles/admin.yml
+  pipeline: ./taskfiles/pipeline.yml
+  release: ./taskfiles/release.yml
+
+tasks:
+  default:
+    desc: Visa tillgängliga kommandon
+    cmds:
+      - task --list
+
+  hq:
+    desc: Starta Harlequin (DuckDB GUI)
+    cmds:
+      - uv run harlequin data/warehouse.duckdb
+
+  sf:
+    desc: Starta Superfile (filhanterare)
+    cmds:
+      - superfile
