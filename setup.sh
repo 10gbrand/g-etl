@@ -22,7 +22,6 @@ curl -sL "${BASE_URL}/docker-compose.yml" -o docker-compose.yml
 # Ladda ner config-filer
 echo "Laddar ner config..."
 curl -sL "${BASE_URL}/config/datasets.yml" -o config/datasets.yml
-curl -sL "${BASE_URL}/config/settings.py" -o config/settings.py
 
 # Ladda ner SQL-filer
 echo "Laddar ner SQL-templates..."
@@ -43,7 +42,6 @@ echo "=== Setup klar! ==="
 echo ""
 echo "Struktur:"
 echo "  config/datasets.yml  - Dataset-konfiguration (redigera för att välja datakällor)"
-echo "  config/settings.py   - Inställningar (H3-resolution, parallelism)"
 echo "  sql/migrations/      - SQL-templates för transformationer"
 echo "  input_data/          - Lägg lokala geodatafiler här (monteras som /app/input_data)"
 echo "  data/                - Resultat sparas här"

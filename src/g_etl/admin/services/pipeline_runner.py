@@ -8,9 +8,9 @@ from pathlib import Path
 import duckdb
 import yaml
 
-from config.settings import settings
 from g_etl.migrations.migrator import Migrator
 from g_etl.plugins import clear_download_cache, get_plugin
+from g_etl.settings import settings
 from g_etl.sql_generator import SQLGenerator
 
 

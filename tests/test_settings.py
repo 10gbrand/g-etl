@@ -1,9 +1,9 @@
-"""Tester för config/settings.py."""
+"""Tester för g_etl/settings.py."""
 
 import os
 from pathlib import Path
 
-from config.settings import Settings, settings
+from g_etl.settings import Settings, settings
 
 
 class TestSettings:
@@ -131,7 +131,7 @@ class TestCpuCount:
 
     def test_cpu_count_returns_positive(self):
         """Kontrollera att cpu_count returnerar positivt värde."""
-        from config.settings import _cpu_count
+        from g_etl.settings import _cpu_count
 
         count = _cpu_count()
         assert count >= 1
@@ -146,7 +146,7 @@ class TestCpuCount:
         monkeypatch.setattr(os, "cpu_count", mock_cpu_count)
 
         # Importera _cpu_count-funktionen direkt
-        from config.settings import _cpu_count
+        from g_etl.settings import _cpu_count
 
         result = _cpu_count()
         assert result == 4

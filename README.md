@@ -20,7 +20,6 @@ docker compose run --rm admin
 Detta skapar följande struktur lokalt:
 ```
 ./config/datasets.yml   # Redigera för att välja datakällor
-./config/settings.py    # H3-resolution, parallelism
 ./sql/migrations/       # SQL-templates (kan anpassas)
 ./input_data/           # Lokala geodatafiler (GeoPackage, Shapefile, etc.)
 ./data/                 # Resultat sparas här
@@ -376,9 +375,9 @@ Dataflöde genom scheman (per dataset):
 ```
 g-etl/
 ├── config/
-│   ├── datasets.yml       # Dataset-konfiguration
-│   └── settings.py        # Inställningar (H3, CRS, parallelism)
+│   └── datasets.yml       # Dataset-konfiguration
 ├── src/g_etl/             # Python-paket
+│   ├── settings.py        # Inställningar (H3, CRS, parallelism)
 │   ├── plugins/           # Datakälla-plugins
 │   │   ├── base.py        # Basklass för plugins
 │   │   ├── zip_geopackage.py
@@ -476,7 +475,7 @@ chmod +x g_etl
 Arkivet innehåller:
 
 - `g_etl` – Kompilerad binär (Nuitka)
-- `config/` – Konfiguration (datasets.yml, settings.py)
+- `config/` – Konfiguration (datasets.yml)
 - `sql/` – SQL-templates för transformationer
 
 #### Alternativ 2: Docker
@@ -494,7 +493,6 @@ docker compose run --rm admin
 Efter setup finns följande struktur:
 ```
 ./config/datasets.yml   # Dataset-konfiguration (redigera för att välja datakällor)
-./config/settings.py    # Inställningar (H3-resolution, parallelism)
 ./sql/migrations/       # SQL-templates för transformationer
 ./input_data/           # Lokala geodatafiler (monteras som /app/input_data i containern)
 ./data/                 # Resultat sparas här (warehouse.duckdb, parquet-filer)
@@ -643,7 +641,7 @@ H3-celler möjliggör snabba spatial joins och aggregeringar utan geometriberäk
 
 ## Parallelism
 
-Parallelliteten auto-detekteras baserat på antal CPU-kärnor (`config/settings.py`):
+Parallelliteten auto-detekteras baserat på antal CPU-kärnor (`src/g_etl/settings.py`):
 
 ```python
 MAX_CONCURRENT_EXTRACTS = cpu_count()      # I/O-bound: alla kärnor

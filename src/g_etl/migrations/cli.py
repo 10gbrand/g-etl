@@ -13,8 +13,8 @@ from pathlib import Path
 
 import duckdb
 
-from config.settings import settings
 from g_etl.migrations.migrator import MigrationStatus, Migrator
+from g_etl.settings import settings
 
 
 def get_connection(

@@ -11,10 +11,9 @@ from pathlib import Path
 
 import yaml
 
-from config.settings import settings
-
 # Importera den gemensamma PipelineRunner
 from g_etl.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
+from g_etl.settings import settings
 
 # =============================================================================
 # Loggning

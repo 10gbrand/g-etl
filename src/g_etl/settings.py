@@ -1,7 +1,7 @@
 """Centrala inställningar för G-ETL.
 
 Alla konfigurerbara värden samlas här för enkel justering.
-Importera med: from config.settings import settings
+Importera med: from g_etl.settings import settings
 """
 
 import os
@@ -20,6 +20,7 @@ class Settings:
     DATA_DIR: Path = Path("data")
     RAW_DIR: Path = Path("data/raw")
     TEMP_DIR: Path = Path("data/temp")  # Temporära per-dataset DBs
+    INPUT_DATA_DIR: Path = Path("input_data")  # Lokala geodatafiler
     LOGS_DIR: Path = Path("logs")
     SQL_DIR: Path = Path("sql")
     SQL_INIT_DIR: Path = Path("sql/_init")
@@ -89,7 +90,13 @@ class Settings:
 
     def ensure_dirs(self) -> None:
         """Skapa alla nödvändiga kataloger."""
-        for dir_path in [self.DATA_DIR, self.RAW_DIR, self.TEMP_DIR, self.LOGS_DIR]:
+        for dir_path in [
+            self.DATA_DIR,
+            self.RAW_DIR,
+            self.TEMP_DIR,
+            self.INPUT_DATA_DIR,
+            self.LOGS_DIR,
+        ]:
             dir_path.mkdir(parents=True, exist_ok=True)
 
     def get_temp_db_path(self, dataset_id: str) -> Path:

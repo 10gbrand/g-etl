@@ -24,7 +24,7 @@ Användning:
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from config.settings import settings
+from g_etl.settings import settings
 
 
 @dataclass

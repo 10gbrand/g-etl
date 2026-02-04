@@ -113,7 +113,7 @@ Post-merge:
 - `src/g_etl/migrations/` - Migreringssystem (Migrator, CLI)
 - `sql/migrations/` - Alla SQL-filer (init + templates)
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
-- `config/settings.py` - Centrala inställningar (H3-resolution, CRS, parallelism)
+- `src/g_etl/settings.py` - Centrala inställningar (H3-resolution, CRS, parallelism)
 
 **Auto-detekterad parallelism (settings.py):**
 
