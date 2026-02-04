@@ -10,12 +10,20 @@ En ETL-stack för svenska geodata med DuckDB som analytisk motor, H3 spatial ind
 ### Docker (enklast)
 
 ```bash
-# Ladda ner docker-compose och kör
-curl -LO https://raw.githubusercontent.com/10gbrand/g-etl/main/docker-compose.yml
+# Ladda ner setup-script och kör
+curl -sL https://raw.githubusercontent.com/10gbrand/g-etl/main/setup.sh | bash
+
+# Starta TUI
 docker compose run --rm admin
 ```
 
-Data sparas i `./data/` och konfiguration kan anpassas i `./config/`.
+Detta skapar följande struktur lokalt:
+```
+./config/datasets.yml   # Redigera för att välja datakällor
+./config/settings.py    # H3-resolution, parallelism
+./sql/migrations/       # SQL-templates (kan anpassas)
+./data/                 # Resultat sparas här
+```
 
 ### TUI (lokal installation)
 
@@ -475,18 +483,28 @@ Arkivet innehåller:
 Kör med publicerad Docker image:
 
 ```bash
-# Enklaste sättet - använd docker-compose.yml
-curl -LO https://raw.githubusercontent.com/10gbrand/g-etl/main/docker-compose.yml
-docker compose run --rm admin
+# Ladda ner setup-script (skapar config/, sql/, data/)
+curl -sL https://raw.githubusercontent.com/10gbrand/g-etl/main/setup.sh | bash
 
-# Eller direkt med docker
+# Starta TUI
+docker compose run --rm admin
+```
+
+Efter setup finns följande struktur:
+```
+./config/datasets.yml   # Dataset-konfiguration (redigera för att välja datakällor)
+./config/settings.py    # Inställningar (H3-resolution, parallelism)
+./sql/migrations/       # SQL-templates för transformationer
+./data/                 # Resultat sparas här (warehouse.duckdb, parquet-filer)
+```
+
+```bash
+# Alternativ: kör direkt utan lokala config-filer (använder inbyggda)
 docker run -it -v $(pwd)/data:/app/data ghcr.io/10gbrand/g-etl:latest
 
 # Specifik version
 docker pull ghcr.io/10gbrand/g-etl:1.0.0
 ```
-
-Data sparas i `./data/` katalogen.
 
 #### Alternativ 3: Devbox
 
