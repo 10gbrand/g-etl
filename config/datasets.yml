@@ -480,14 +480,14 @@ datasets:
   # LOKALA DATASET
   # ============================================================================
 
-  - id: giss_gavd
-    name: GISS GAVD
-    description: GAVD-lager från GISS GeoPackage
+  - id: lokalt_dataset
+    name: lokalt dataset
+    description: lokalt dataset från GISS GeoPackage
     typ: lokal_gpkg
     plugin: zip_geopackage
-    url: /Volumes/T9/spring/GISS.gpkg.zip
+    url: /app/data/lokalt.gpkg.zip
     layer: GAVD
     enabled: false
     field_mapping:
-      klass: giss
+      klass: klass
       leverantor: intern

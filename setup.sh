@@ -13,7 +13,7 @@ echo ""
 
 # Skapa mappar
 echo "Skapar mappar..."
-mkdir -p config sql/migrations data
+mkdir -p config sql/migrations data input_data
 
 # Ladda ner docker-compose.yml
 echo "Laddar ner docker-compose.yml..."
@@ -45,6 +45,7 @@ echo "Struktur:"
 echo "  config/datasets.yml  - Dataset-konfiguration (redigera för att välja datakällor)"
 echo "  config/settings.py   - Inställningar (H3-resolution, parallelism)"
 echo "  sql/migrations/      - SQL-templates för transformationer"
+echo "  input_data/          - Lägg lokala geodatafiler här (monteras som /app/input_data)"
 echo "  data/                - Resultat sparas här"
 echo ""
 echo "Starta med:"

@@ -22,6 +22,7 @@ Detta skapar följande struktur lokalt:
 ./config/datasets.yml   # Redigera för att välja datakällor
 ./config/settings.py    # H3-resolution, parallelism
 ./sql/migrations/       # SQL-templates (kan anpassas)
+./input_data/           # Lokala geodatafiler (GeoPackage, Shapefile, etc.)
 ./data/                 # Resultat sparas här
 ```
 
@@ -495,6 +496,7 @@ Efter setup finns följande struktur:
 ./config/datasets.yml   # Dataset-konfiguration (redigera för att välja datakällor)
 ./config/settings.py    # Inställningar (H3-resolution, parallelism)
 ./sql/migrations/       # SQL-templates för transformationer
+./input_data/           # Lokala geodatafiler (monteras som /app/input_data i containern)
 ./data/                 # Resultat sparas här (warehouse.duckdb, parquet-filer)
 ```
 

@@ -9,8 +9,10 @@ services:
   admin:
     image: ghcr.io/10gbrand/g-etl:latest
     volumes:
-      # Data persistence
+      # Data persistence (resultat sparas här)
       - ./data:/app/data
+      # Lokal geodata (GeoPackage, Shapefile, etc.)
+      - ./input_data:/app/input_data:ro
       # Custom config (valfritt)
       - ./config:/app/config:ro
       # Custom SQL (valfritt)
