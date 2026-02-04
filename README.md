@@ -133,24 +133,24 @@ Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelis
 ┌─────────────────────────────────────────────────────────────────┐
 │  EXTRACT (parallellt, cpu_count() workers)                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │ dataset1 │  │ dataset2 │  │ dataset3 │  │ dataset4 │  ...   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  │ dataset1 │  │ dataset2 │  │ dataset3 │  │ dataset4 │  ...    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
 │       │             │             │             │               │
 │       ▼             ▼             ▼             ▼               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │ .parquet │  │ .parquet │  │ .parquet │  │ .parquet │        │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  │ .parquet │  │ .parquet │  │ .parquet │  │ .parquet │         │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
 └───────┼─────────────┼─────────────┼─────────────┼───────────────┘
         │             │             │             │
         ▼             ▼             ▼             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  TRANSFORM (parallellt, cpu_count()//2 workers)                 │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │ temp1.db │  │ temp2.db │  │ temp3.db │  │ temp4.db │  ...   │
-│  │ 004→007  │  │ 004→007  │  │ 004→007  │  │ 004→007  │        │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  │ temp1.db │  │ temp2.db │  │ temp3.db │  │ temp4.db │  ...    │
+│  │ 004→007  │  │ 004→007  │  │ 004→007  │  │ 004→007  │         │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
 └───────┼─────────────┼─────────────┼─────────────┼───────────────┘
         │             │             │             │
         └─────────────┴──────┬──────┴─────────────┘
@@ -172,14 +172,14 @@ Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelis
 
 Plugins laddar ner och läser in geodata till `raw`-schemat i DuckDB.
 
-| Plugin | Källa | Format |
-|--------|-------|--------|
-| `zip_geopackage` | URL eller lokal fil | Zippad GeoPackage |
-| `zip_shapefile` | URL eller lokal fil | Zippad Shapefile |
-| `wfs` | OGC WFS-tjänst | GML/JSON |
-| `geoparquet` | URL, S3 eller lokal fil | GeoParquet |
-| `lantmateriet` | Lantmäteriets API | JSON |
-| `mssql` | Microsoft SQL Server | ODBC |
+| Plugin | Källa | Format | status |
+|--------|-------|--------|--------|
+| `zip_geopackage` | URL eller lokal fil | Zippad GeoPackage | Klart |
+| `zip_shapefile` | URL eller lokal fil | Zippad Shapefile | Klart |
+| `wfs` | OGC WFS-tjänst | GML/JSON | Plan |
+| `geoparquet` | URL, S3 eller lokal fil | GeoParquet | Plan |
+| `lantmateriet` | Lantmäteriets API | JSON | Plan |
+| `mssql` | Microsoft SQL Server | ODBC | Plan |
 
 **Resultat:** `raw.{dataset}` – rådata med originalkolumner och geometri.
 
@@ -324,6 +324,8 @@ CREATE OR REPLACE TABLE mart.all_h3_cells AS
 SELECT * FROM mart.naturreservat
 UNION ALL SELECT * FROM mart.biotopskyddsomraden
 UNION ALL SELECT * FROM mart.vattenskyddsomraden;
+.
+.
 ```
 
 ## DuckDB-scheman
