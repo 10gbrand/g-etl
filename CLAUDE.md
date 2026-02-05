@@ -24,6 +24,8 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 - `task pipeline:export:geojson` - Exportera H3-data till GeoJSON
 - `task pipeline:export:html` - Exportera H3-data till interaktiv HTML-karta
 - `task pipeline:export:parquet` - Exportera H3-data till GeoParquet
+- `task pipeline:export:gpkg` - Exportera H3-data till GeoPackage (bäst för QGIS)
+- `task pipeline:export:fgb` - Exportera H3-data till FlatGeobuf (snabb streaming)
 
 **Python:**
 - `task py:install` - Installera dependencies med UV
@@ -59,19 +61,30 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 
 ## Architecture
 
-CLI och TUI delar samma `PipelineRunner` för parallell exekvering:
+Tre gränssnitt delar samma `PipelineRunner` för parallell exekvering:
 
 ```text
 CLI (pipeline.py) ─────┐
-                       ├──→ PipelineRunner → Plugins → DuckDB
-TUI (admin/app.py) ────┘                          ↓
-                                           Parallell Transform
+                       │
+TUI (admin/app.py) ────┼──→ PipelineRunner → Plugins → DuckDB
+                       │                          ↓
+QGIS Plugin ───────────┘                   Parallell Transform
                                            (temp-DB per dataset)
                                                   ↓
                                            Merge → warehouse.duckdb
                                                   ↓
                                            Post-merge SQL (*_merged.sql)
+                                                  ↓
+                                           Export (GeoPackage/Parquet/FGB)
 ```
+
+**Styrkor per gränssnitt:**
+
+| Gränssnitt | Styrka | Användning |
+|------------|--------|------------|
+| **CLI** | Schemaläggning, batch, CI/CD | `task run`, cron-jobb |
+| **TUI** | Interaktiv kontroll, progress | `task admin:run` |
+| **QGIS** | Kartanalys, visualisering | Plugin i QGIS |
 
 **Parallell Transform-arkitektur:**
 
@@ -109,7 +122,8 @@ Post-merge:
 - `src/g_etl/admin/app.py` - TUI-applikation (Textual) som anropar PipelineRunner
 - `src/g_etl/plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)
 - `src/g_etl/sql_generator.py` - Genererar SQL från mallar + datasets.yml
-- `src/g_etl/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet)
+- `src/g_etl/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet, GeoPackage, FlatGeobuf)
+- `qgis_plugin/` - QGIS-plugin (ren Python, installerar dependencies automatiskt)
 - `src/g_etl/migrations/` - Migreringssystem (Migrator, CLI)
 - `sql/migrations/` - Alla SQL-filer (init + templates)
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
@@ -204,6 +218,37 @@ Nya datakällor läggs till som plugins i `src/g_etl/plugins/`. Varje plugin:
 1. Ärver från `SourcePlugin` i `g_etl.plugins.base`
 2. Implementerar `extract(config, conn, on_log)` metoden
 3. Registreras i `g_etl/plugins/__init__.py`
+
+## QGIS Plugin
+
+QGIS-pluginet (`qgis_plugin/`) är ett självständigt plugin som inkluderar all nödvändig kod.
+
+**Installation:**
+
+1. Ladda ner `g_etl_qgis-<version>.zip` från GitHub Releases
+2. I QGIS: Tillägg → Hantera och installera tillägg → Installera från ZIP
+
+**Arkitektur:**
+
+- Ren Python (ingen binär)
+- Installerar dependencies automatiskt vid första körning (duckdb, h3, etc.)
+- Delar samma `PipelineRunner` som CLI/TUI
+- Exporterar till GeoPackage/GeoParquet/FlatGeobuf för QGIS-kompatibilitet
+
+**Utveckling:**
+
+```text
+qgis_plugin/
+├── __init__.py         # Plugin entry point
+├── metadata.txt        # QGIS plugin metadata (version uppdateras vid bygge)
+├── g_etl_plugin.py     # Huvudklass, meny, toolbar
+├── dialog.py           # Qt-dialoger
+├── deps.py             # Dependency-hantering
+└── runner.py           # Wrapper för PipelineRunner
+```
+
+Vid release byggs pluginet automatiskt och laddas upp till GitHub Releases.
+Version synkas automatiskt med release-taggen.
 
 ## Working Guidelines
 

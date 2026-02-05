@@ -1,0 +1,1 @@
+"""Tester för QGIS-plugin."""

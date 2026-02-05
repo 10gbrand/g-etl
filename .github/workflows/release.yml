@@ -219,6 +219,124 @@ jobs:
           # Säkerställ att g_etl-paketet hittas
           PYTHONPATH="$(pwd)/src:$PYTHONPATH" uv run pytest tests/ -v
 
+  build-qgis-plugin:
+    name: Build QGIS Plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build QGIS plugin package
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          echo "Building QGIS plugin version: $VERSION"
+
+          # Skapa plugin-struktur
+          mkdir -p g_etl_qgis/core
+
+          # Kopiera QGIS-specifik plugin-kod
+          cp qgis_plugin/__init__.py g_etl_qgis/
+          cp qgis_plugin/metadata.txt g_etl_qgis/
+          cp qgis_plugin/g_etl_plugin.py g_etl_qgis/
+          cp qgis_plugin/dialog.py g_etl_qgis/
+          cp qgis_plugin/deps.py g_etl_qgis/
+          cp qgis_plugin/runner.py g_etl_qgis/
+
+          # Kopiera core-moduler (utan TUI-specifik kod)
+          cp -r src/g_etl/admin g_etl_qgis/core/
+          cp -r src/g_etl/plugins g_etl_qgis/core/
+          cp -r src/g_etl/migrations g_etl_qgis/core/
+          cp src/g_etl/settings.py g_etl_qgis/core/
+          cp src/g_etl/sql_generator.py g_etl_qgis/core/
+          cp src/g_etl/export_h3.py g_etl_qgis/core/
+
+          # Skapa __init__.py för core
+          echo '"""G-ETL core modules."""' > g_etl_qgis/core/__init__.py
+
+          # Kopiera config och SQL
+          cp -r config g_etl_qgis/
+          cp -r sql g_etl_qgis/
+
+          # Uppdatera version i metadata.txt
+          sed -i "s/^version=.*/version=$VERSION/" g_etl_qgis/metadata.txt
+
+          # Verifiera
+          echo "=== Plugin structure ==="
+          find g_etl_qgis -type f | head -30
+          echo "=== metadata.txt ==="
+          cat g_etl_qgis/metadata.txt
+
+          # Skapa zip
+          zip -r g_etl_qgis-${VERSION}.zip g_etl_qgis/
+
+          # Verifiera zip
+          echo "=== ZIP contents ==="
+          unzip -l g_etl_qgis-${VERSION}.zip | head -30
+          ls -lh g_etl_qgis-${VERSION}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: g_etl_qgis
+          path: g_etl_qgis-*.zip
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: g_etl_qgis-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate plugins.xml for QGIS repository
+        if: github.event_name == 'release'
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          cat > plugins.xml << 'XMLEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plugins>
+            <pyqgis_plugin name="G-ETL" version="VERSION_PLACEHOLDER">
+              <description>ETL-pipeline för svenska geodata med H3-indexering</description>
+              <about>G-ETL är en containerbaserad ETL-stack för svenska geodata. Hämta data från WFS, Lantmäteriet, GeoParquet m.fl. och transformera till H3-celler för analys.</about>
+              <version>VERSION_PLACEHOLDER</version>
+              <qgis_minimum_version>3.28</qgis_minimum_version>
+              <homepage>https://github.com/10gbrand/g-etl</homepage>
+              <file_name>g_etl_qgis-VERSION_PLACEHOLDER.zip</file_name>
+              <author_name>10gbrand</author_name>
+              <download_url>https://github.com/10gbrand/g-etl/releases/download/vVERSION_PLACEHOLDER/g_etl_qgis-VERSION_PLACEHOLDER.zip</download_url>
+              <tracker>https://github.com/10gbrand/g-etl/issues</tracker>
+              <repository>https://github.com/10gbrand/g-etl</repository>
+              <tags>etl,geodata,h3,duckdb,sweden</tags>
+              <category>Analysis</category>
+              <icon>icon.png</icon>
+              <experimental>False</experimental>
+            </pyqgis_plugin>
+          </plugins>
+          XMLEOF
+
+          # Ersätt VERSION_PLACEHOLDER med faktisk version
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" plugins.xml
+
+          echo "=== plugins.xml ==="
+          cat plugins.xml
+
+      - name: Upload plugins.xml artifact
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qgis-plugins-xml
+          path: plugins.xml
+
   publish-docker:
     name: Publish Docker image (multi-platform)
     runs-on: ubuntu-latest

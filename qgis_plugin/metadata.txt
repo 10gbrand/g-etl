@@ -1,0 +1,18 @@
+[general]
+name=G-ETL
+description=ETL-pipeline för svenska geodata med H3-indexering. Hämta data från WFS, Lantmäteriet, GeoParquet m.fl. och transformera till H3-celler för analys.
+about=G-ETL är en containerbaserad ETL-stack för svenska geodata. Projektet använder DuckDB som analytisk SQL-motor med plugin-baserad datahämtning och ren SQL för transformationer. Detta QGIS-plugin ger tillgång till samma pipeline direkt i QGIS.
+version=dev
+qgisMinimumVersion=3.28
+author=10gbrand
+email=mattias@10gbrand.se
+repository=https://github.com/10gbrand/g-etl
+tracker=https://github.com/10gbrand/g-etl/issues
+homepage=https://github.com/10gbrand/g-etl
+tags=etl,geodata,h3,duckdb,sweden,geodata,hexagon
+category=Analysis
+icon=icon.png
+experimental=False
+deprecated=False
+hasProcessingProvider=no
+server=False

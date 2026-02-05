@@ -30,3 +30,33 @@ tasks:
     desc: Lista tillgängliga dataset-typer
     cmds:
       - uv run python -m g_etl.pipeline --list-types
+
+  export:kepler:
+    desc: Exportera H3-data till CSV för Kepler.gl
+    cmds:
+      - uv run python -m g_etl.export_h3 --format csv
+
+  export:geojson:
+    desc: Exportera H3-data till GeoJSON
+    cmds:
+      - uv run python -m g_etl.export_h3 --format geojson
+
+  export:html:
+    desc: Exportera H3-data till interaktiv HTML-karta
+    cmds:
+      - uv run python -m g_etl.export_h3 --format html
+
+  export:parquet:
+    desc: Exportera H3-data till GeoParquet
+    cmds:
+      - uv run python -m g_etl.export_h3 --format parquet
+
+  export:gpkg:
+    desc: Exportera H3-data till GeoPackage (bäst för QGIS)
+    cmds:
+      - uv run python -m g_etl.export_h3 --format gpkg
+
+  export:fgb:
+    desc: Exportera H3-data till FlatGeobuf (snabb streaming)
+    cmds:
+      - uv run python -m g_etl.export_h3 --format fgb

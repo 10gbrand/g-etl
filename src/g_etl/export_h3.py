@@ -273,14 +273,74 @@ def export_parquet(conn: duckdb.DuckDBPyConnection, output_path: Path, limit: in
     print("Kan öppnas i QGIS, GeoPandas, eller DuckDB.")
 
 
+def export_geopackage(conn: duckdb.DuckDBPyConnection, output_path: Path, limit: int | None = None):
+    """Exportera till GeoPackage med H3-polygoner.
+
+    GeoPackage är det format som har bäst stöd i QGIS och fungerar
+    som en SQLite-databas med geografisk data.
+    """
+    limit_clause = f"LIMIT {limit}" if limit else ""
+
+    conn.execute(f"""
+        COPY (
+            SELECT
+                h3_cell,
+                dataset,
+                leverantor,
+                klass,
+                classification,
+                COUNT(*) as count,
+                ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geom
+            FROM mart.h3_cells
+            GROUP BY h3_cell, dataset, leverantor, klass, classification
+            ORDER BY count DESC
+            {limit_clause}
+        ) TO '{output_path}' (FORMAT GDAL, DRIVER 'GPKG')
+    """)
+
+    count = conn.execute("SELECT COUNT(DISTINCT h3_cell) FROM mart.h3_cells").fetchone()[0]
+    print(f"Exporterade {count} unika H3-celler till {output_path}")
+    print("\nÖppna i QGIS: Dra och släpp filen eller Lager > Lägg till lager > Vektorlager")
+
+
+def export_flatgeobuf(conn: duckdb.DuckDBPyConnection, output_path: Path, limit: int | None = None):
+    """Exportera till FlatGeobuf med H3-polygoner.
+
+    FlatGeobuf är ett binärt format optimerat för snabb streaming
+    och fungerar bra för stora dataset.
+    """
+    limit_clause = f"LIMIT {limit}" if limit else ""
+
+    conn.execute(f"""
+        COPY (
+            SELECT
+                h3_cell,
+                dataset,
+                leverantor,
+                klass,
+                classification,
+                COUNT(*) as count,
+                ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geom
+            FROM mart.h3_cells
+            GROUP BY h3_cell, dataset, leverantor, klass, classification
+            ORDER BY count DESC
+            {limit_clause}
+        ) TO '{output_path}' (FORMAT GDAL, DRIVER 'FlatGeobuf')
+    """)
+
+    count = conn.execute("SELECT COUNT(DISTINCT h3_cell) FROM mart.h3_cells").fetchone()[0]
+    print(f"Exporterade {count} unika H3-celler till {output_path}")
+    print("\nKan öppnas i QGIS, MapLibre GL JS, eller andra GIS-verktyg.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Exportera H3-data för visualisering")
     parser.add_argument(
         "--format",
         "-f",
-        choices=["csv", "geojson", "html", "parquet"],
+        choices=["csv", "geojson", "html", "parquet", "gpkg", "fgb"],
         default="csv",
-        help="Exportformat (default: csv)",
+        help="Exportformat: csv, geojson, html, parquet, gpkg (GeoPackage), fgb (FlatGeobuf)",
     )
     parser.add_argument(
         "--output", "-o", type=Path, help="Output-fil (default: data/h3_export.<format>)"
@@ -331,7 +391,14 @@ def main():
     if args.output:
         output_path = args.output
     else:
-        extensions = {"csv": ".csv", "geojson": ".geojson", "html": ".html", "parquet": ".parquet"}
+        extensions = {
+            "csv": ".csv",
+            "geojson": ".geojson",
+            "html": ".html",
+            "parquet": ".parquet",
+            "gpkg": ".gpkg",
+            "fgb": ".fgb",
+        }
         output_path = Path("data") / f"h3_export{extensions[args.format]}"
 
     # Säkerställ att output-mappen finns
@@ -356,6 +423,10 @@ def main():
         export_html(conn, output_path, args.limit)
     elif args.format == "parquet":
         export_parquet(conn, output_path, args.limit)
+    elif args.format == "gpkg":
+        export_geopackage(conn, output_path, args.limit)
+    elif args.format == "fgb":
+        export_flatgeobuf(conn, output_path, args.limit)
 
     conn.close()
 

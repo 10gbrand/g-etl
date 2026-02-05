@@ -58,7 +58,25 @@ task pipeline:dataset -- naturreservat
 
 # Datasets av viss typ
 task pipeline:type -- skogsstyrelsen_gpkg
+
+# Exportera resultat
+task pipeline:export:gpkg      # GeoPackage (bäst för QGIS)
+task pipeline:export:parquet   # GeoParquet
+task pipeline:export:fgb       # FlatGeobuf
+task pipeline:export:geojson   # GeoJSON
+task pipeline:export:html      # Interaktiv HTML-karta
+task pipeline:export:kepler    # CSV för Kepler.gl
 ```
+
+### QGIS Plugin
+
+Kör G-ETL direkt i QGIS med full integration:
+
+1. Ladda ner `g_etl_qgis-<version>.zip` från [Releases](https://github.com/10gbrand/g-etl/releases)
+2. I QGIS: **Tillägg** → **Hantera och installera tillägg** → **Installera från ZIP**
+3. Välj zip-filen och klicka **Installera tillägg**
+
+Se [QGIS Plugin dokumentation](qgis_plugin/README.md) för mer information.
 
 ### Förbyggd binär
 
