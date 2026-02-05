@@ -22,16 +22,28 @@ REQUIRED_PACKAGES = {
 
 
 def get_qgis_pip_path() -> Optional[str]:
-    """Hitta pip i QGIS-installationen (macOS).
+    """Hitta pip i QGIS-installationen (macOS/Windows).
 
     Returns:
-        Sökväg till pip3 eller None om ej hittad.
+        Sökväg till pip eller None om ej hittad.
     """
-    # macOS QGIS LTR
-    qgis_pip_paths = [
-        "/Applications/QGIS-LTR.app/Contents/MacOS/bin/pip3",
-        "/Applications/QGIS.app/Contents/MacOS/bin/pip3",
-    ]
+    if sys.platform == "darwin":
+        # macOS QGIS LTR
+        qgis_pip_paths = [
+            "/Applications/QGIS-LTR.app/Contents/MacOS/bin/pip3",
+            "/Applications/QGIS.app/Contents/MacOS/bin/pip3",
+        ]
+    elif sys.platform == "win32":
+        # Windows QGIS - pip ligger i samma katalog som Python
+        # Typiskt: C:\Program Files\QGIS 3.x\apps\Python3x\Scripts\pip.exe
+        python_dir = os.path.dirname(sys.executable)
+        qgis_pip_paths = [
+            os.path.join(python_dir, "Scripts", "pip.exe"),
+            os.path.join(python_dir, "Scripts", "pip3.exe"),
+        ]
+    else:
+        # Linux - använd system pip
+        return None
 
     for pip_path in qgis_pip_paths:
         if os.path.exists(pip_path):
@@ -51,13 +63,17 @@ def get_install_command(packages: List[str]) -> str:
     """
     pkg_str = " ".join(packages)
 
-    # Kolla om vi är på macOS med QGIS
+    # Kolla om vi har QGIS-specifik pip
     qgis_pip = get_qgis_pip_path()
     if qgis_pip:
-        return f"{qgis_pip} install {pkg_str}"
+        return f'"{qgis_pip}" install {pkg_str}'
+
+    # Windows: använd python -m pip
+    if sys.platform == "win32":
+        return f'"{sys.executable}" -m pip install --user {pkg_str}'
 
     # Fallback till generiskt kommando
-    return f"pip3 install {pkg_str}"
+    return f"pip3 install --user {pkg_str}"
 
 
 def check_dependencies() -> List[str]:
@@ -94,12 +110,19 @@ def _try_pip_install(
         on_progress(f"Försöker: {description}")
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
+        # Bygger kwargs för subprocess.run
+        kwargs = {
+            "capture_output": True,
+            "text": True,
+            "timeout": 300,
+            "stdin": subprocess.DEVNULL,
+        }
+
+        # Windows-specifik hantering: dölj konsolfönstret
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        result = subprocess.run(cmd, **kwargs)
 
         if result.returncode == 0:
             if on_progress:
