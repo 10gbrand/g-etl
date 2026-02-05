@@ -250,7 +250,7 @@ jobs:
           cp qgis_plugin/g_etl_plugin.py g_etl_qgis/
           cp qgis_plugin/dialog.py g_etl_qgis/
           cp qgis_plugin/deps.py g_etl_qgis/
-          cp qgis_plugin/runner.py g_etl_qgis/
+          cp qgis_plugin/qgis_runner.py g_etl_qgis/
 
           # Kopiera core-moduler (utan TUI-specifik kod)
           cp -r src/g_etl/admin g_etl_qgis/core/
