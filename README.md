@@ -415,7 +415,7 @@ g-etl/
 │   │   └── migrator.py
 │   ├── pipeline.py        # CLI (anropar PipelineRunner)
 │   ├── sql_generator.py   # Genererar SQL från templates
-│   └── export_h3.py       # Export av H3-data
+│   └── export.py          # Export av data
 ├── sql/
 │   └── migrations/        # Alla SQL-filer
 │       ├── 001_db_extensions.sql           # Init: extensions

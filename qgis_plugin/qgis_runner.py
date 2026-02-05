@@ -19,11 +19,12 @@ def _ensure_core_imports():
     if core_imported:
         return
 
-    global PipelineRunner, PipelineEvent, settings, yaml
+    global PipelineRunner, PipelineEvent, settings, yaml, export_mart_tables
 
     import yaml as _yaml
 
     from .runner.core.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
+    from .runner.core.export import export_mart_tables
     from .runner.core.settings import settings
 
     yaml = _yaml
@@ -234,6 +235,8 @@ class QGISPipelineRunner:
     ) -> Optional[Path]:
         """Exportera resultat till valt format.
 
+        Exporterar varje tabell i mart-schemat till en egen fil.
+
         Args:
             db_path: Sökväg till DuckDB-databasen.
             output_dir: Katalog för output.
@@ -241,8 +244,9 @@ class QGISPipelineRunner:
             on_log: Callback för loggmeddelanden.
 
         Returns:
-            Sökväg till exporterad fil.
+            Sökväg till output-katalogen.
         """
+        _ensure_core_imports()
         import duckdb
 
         conn = duckdb.connect(str(db_path), read_only=True)
@@ -252,85 +256,25 @@ class QGISPipelineRunner:
             conn.execute("LOAD spatial")
             conn.execute("LOAD h3")
 
-            # Kolla om mart.h3_cells finns
-            tables = conn.execute("""
-                SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'mart'
-            """).fetchall()
+            # Använd generell export-funktion
+            exported_files = export_mart_tables(
+                conn=conn,
+                output_dir=output_dir,
+                export_format=export_format,
+                on_log=on_log,
+            )
 
-            if not tables:
-                if on_log:
-                    on_log("Inga tabeller i mart-schemat")
+            if not exported_files:
                 return None
 
-            # Bestäm output-fil och driver
-            format_config = {
-                "gpkg": (".gpkg", "GPKG"),
-                "geoparquet": (".parquet", None),  # Använd PARQUET format
-                "fgb": (".fgb", "FlatGeobuf"),
-            }
-
-            ext, driver = format_config.get(export_format, (".gpkg", "GPKG"))
-            output_path = output_dir / f"g_etl_export{ext}"
-
-            # Bygg export-SQL
-            # Försök först med h3_cells, annars ta första mart-tabellen
-            source_table = "mart.h3_cells"
-            has_h3_cells = any(t[0] == "h3_cells" for t in tables)
-
-            if not has_h3_cells:
-                source_table = f"mart.{tables[0][0]}"
-                if on_log:
-                    on_log(f"Använder {source_table} (h3_cells saknas)")
-
-            # Kolla vilka kolumner som finns
-            columns = conn.execute(f"""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema || '.' || table_name = '{source_table}'
-            """).fetchall()
-            col_names = [c[0] for c in columns]
-
-            # Bygg SELECT med geometri
-            select_cols = []
-            for col in col_names:
-                if col.lower() not in ("geom", "geometry"):
-                    select_cols.append(col)
-
-            # Lägg till geometri från H3 om h3_cell finns
-            if "h3_cell" in col_names:
-                select_cols.append("ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geometry")
-            elif "geom" in col_names:
-                select_cols.append("geom as geometry")
-            elif "geometry" in col_names:
-                select_cols.append("geometry")
-
-            select_sql = ", ".join(select_cols)
-
-            # Exportera
-            if driver:
-                # GDAL-format (GeoPackage, FlatGeobuf)
-                sql = f"""
-                    COPY (SELECT {select_sql} FROM {source_table})
-                    TO '{output_path}' (FORMAT GDAL, DRIVER '{driver}')
-                """
-            else:
-                # GeoParquet
-                sql = f"""
-                    COPY (SELECT {select_sql} FROM {source_table})
-                    TO '{output_path}' (FORMAT PARQUET)
-                """
-
-            conn.execute(sql)
-
-            count = conn.execute(f"SELECT COUNT(*) FROM {source_table}").fetchone()[0]
-            if on_log:
-                on_log(f"Exporterade {count} rader till {output_path.name}")
-
-            return output_path
+            return output_dir
 
         except Exception as e:
             if on_log:
+                import traceback
+
                 on_log(f"Export-fel: {e}")
+                on_log(traceback.format_exc())
             return None
 
         finally:

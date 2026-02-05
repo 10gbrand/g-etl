@@ -1,4 +1,6 @@
-"""Data Explorer screen with ASCII map for geometry validation."""
+"""Data Explorer screen with ASCII map for geometry validation and export."""
+
+from pathlib import Path
 
 import duckdb
 from textual import work
@@ -7,14 +9,18 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import (
+    Button,
     DataTable,
     Footer,
     Header,
     Label,
     OptionList,
+    Select,
+    SelectionList,
     Static,
 )
 from textual.widgets.option_list import Option
+from textual.widgets.selection_list import Selection
 
 from g_etl.admin.services.db_session import get_current_db_path
 from g_etl.admin.widgets.ascii_map import BrailleMapWidget
@@ -70,12 +76,14 @@ class TableInfo(Static):
 
 
 class ExplorerScreen(Screen):
-    """Screen för att utforska data och verifiera geometrier."""
+    """Screen för att utforska data, verifiera geometrier och exportera."""
 
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Tillbaka"),
         Binding("r", "refresh_tables", "Uppdatera"),
         Binding("m", "show_map", "Visa karta"),
+        Binding("e", "export_selected", "Exportera"),
+        Binding("a", "select_all", "Markera alla"),
         Binding("q", "app.pop_screen", "Tillbaka"),
     ]
 
@@ -83,7 +91,7 @@ class ExplorerScreen(Screen):
     ExplorerScreen {
         layout: grid;
         grid-size: 2 3;
-        grid-columns: 25 1fr;
+        grid-columns: 30 1fr;
         grid-rows: auto 1fr auto;
     }
 
@@ -94,14 +102,59 @@ class ExplorerScreen(Screen):
         background: $primary-darken-2;
     }
 
-    #table-list-container {
+    #left-panel {
         height: 100%;
         border: solid $primary;
         padding: 0;
     }
 
-    #table-list {
-        height: 100%;
+    #mart-section {
+        height: 1fr;
+        border-bottom: solid $primary-darken-1;
+    }
+
+    #mart-header {
+        height: auto;
+        padding: 0 1;
+        background: $primary-darken-1;
+    }
+
+    #mart-tables {
+        height: 1fr;
+    }
+
+    #other-section {
+        height: 1fr;
+    }
+
+    #other-header {
+        height: auto;
+        padding: 0 1;
+        background: $secondary-darken-1;
+    }
+
+    #other-tables {
+        height: 1fr;
+    }
+
+    #export-controls {
+        height: auto;
+        padding: 1;
+        border-top: solid $accent;
+        background: $surface-darken-1;
+    }
+
+    #export-row {
+        height: auto;
+        align: center middle;
+    }
+
+    #format-select {
+        width: 12;
+    }
+
+    #export-btn {
+        margin-left: 1;
     }
 
     #right-panel {
@@ -144,6 +197,10 @@ class ExplorerScreen(Screen):
         height: auto;
     }
 
+    SelectionList {
+        height: 100%;
+    }
+
     OptionList {
         height: 100%;
     }
@@ -158,17 +215,36 @@ class ExplorerScreen(Screen):
         self.db_path = db_path or str(get_current_db_path())
         self._conn: duckdb.DuckDBPyConnection | None = None
         self.tables: list[tuple[str, str]] = []  # (schema, table)
+        self.mart_tables: list[str] = []  # Bara tabellnamn i mart
         self.current_table: tuple[str, str] | None = None
+        self.export_formats = [
+            ("FlatGeobuf (.fgb)", "fgb"),
+            ("GeoPackage (.gpkg)", "gpkg"),
+            ("GeoParquet (.parquet)", "geoparquet"),
+        ]
 
     def compose(self) -> ComposeResult:
         """Bygg screen-layouten."""
         yield Header(show_clock=True)
 
         with Container(id="header-row"):
-            yield Label("Data Explorer - Verifiera geometrier", id="screen-title")
+            yield Label("Data Explorer - Utforska & Exportera", id="screen-title")
 
-        with Container(id="table-list-container"):
-            yield OptionList(id="table-list")
+        with Vertical(id="left-panel"):
+            with Vertical(id="mart-section"):
+                yield Label("MART (välj för export)", id="mart-header")
+                yield SelectionList[str](id="mart-tables")
+            with Vertical(id="other-section"):
+                yield Label("ÖVRIGA SCHEMAN", id="other-header")
+                yield OptionList(id="other-tables")
+            with Container(id="export-controls"):
+                with Horizontal(id="export-row"):
+                    yield Select(
+                        [(label, value) for label, value in self.export_formats],
+                        value="fgb",
+                        id="format-select",
+                    )
+                    yield Button("Exportera [e]", id="export-btn", variant="primary")
 
         with Vertical(id="right-panel"):
             with Horizontal(id="top-row"):
@@ -237,6 +313,7 @@ class ExplorerScreen(Screen):
             """
             rows = conn.execute(query).fetchall()
             self.tables = [(row[0], row[1]) for row in rows]
+            self.mart_tables = [row[1] for row in rows if row[0] == "mart"]
 
             # Uppdatera UI på main thread
             self.app.call_from_thread(self._populate_table_list)
@@ -249,25 +326,47 @@ class ExplorerScreen(Screen):
             )
 
     def _populate_table_list(self) -> None:
-        """Fyll i tabell-listan."""
-        option_list = self.query_one("#table-list", OptionList)
-        option_list.clear_options()
+        """Fyll i tabell-listorna."""
+        # Fyll mart-tabeller (med checkboxar)
+        mart_list = self.query_one("#mart-tables", SelectionList)
+        mart_list.clear_options()
+
+        for table in self.mart_tables:
+            # Förvälj alla mart-tabeller
+            mart_list.add_option(Selection(table, f"mart.{table}", initial_state=True))
+
+        # Fyll övriga tabeller (read-only)
+        other_list = self.query_one("#other-tables", OptionList)
+        other_list.clear_options()
 
         current_schema = None
         for schema, table in self.tables:
+            if schema == "mart":
+                continue  # Dessa visas i mart-listan
+
             if schema != current_schema:
-                # Lägg till schema-header
-                option_list.add_option(Option(f"── {schema.upper()} ──", disabled=True))
+                other_list.add_option(Option(f"── {schema.upper()} ──", disabled=True))
                 current_schema = schema
 
-            option_list.add_option(Option(f"  {table}", id=f"{schema}.{table}"))
+            other_list.add_option(Option(f"  {table}", id=f"{schema}.{table}"))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Hantera val av tabell."""
+        """Hantera val av tabell i övriga-listan."""
         if event.option.id and "." in event.option.id:
             schema, table = event.option.id.split(".", 1)
             self.current_table = (schema, table)
             self._load_table_info(schema, table)
+
+    def on_selection_list_selection_highlighted(
+        self, event: SelectionList.SelectionHighlighted
+    ) -> None:
+        """Hantera markering av tabell i mart-listan (visa info)."""
+        if event.selection and event.selection.value:
+            table_id = event.selection.value
+            if "." in table_id:
+                schema, table = table_id.split(".", 1)
+                self.current_table = (schema, table)
+                self._load_table_info(schema, table)
 
     @work(thread=True)
     def _load_table_info(self, schema: str, table: str) -> None:
@@ -393,6 +492,200 @@ class ExplorerScreen(Screen):
         """Visa/dölj kartan."""
         # Kartan visas alltid för geometri-tabeller
         pass
+
+    def action_select_all(self) -> None:
+        """Markera/avmarkera alla mart-tabeller."""
+        mart_list = self.query_one("#mart-tables", SelectionList)
+        selected = mart_list.selected
+
+        if len(selected) == len(self.mart_tables):
+            # Alla är valda - avmarkera alla
+            mart_list.deselect_all()
+            self.notify("Avmarkerade alla tabeller")
+        else:
+            # Markera alla
+            mart_list.select_all()
+            self.notify("Markerade alla tabeller")
+
+    def action_export_selected(self) -> None:
+        """Exportera valda tabeller."""
+        self._do_export()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Hantera knapp-tryck."""
+        if event.button.id == "export-btn":
+            self._do_export()
+
+    def _do_export(self) -> None:
+        """Starta export av valda tabeller."""
+        mart_list = self.query_one("#mart-tables", SelectionList)
+        selected = mart_list.selected
+
+        if not selected:
+            self.notify("Välj minst en tabell att exportera", severity="warning")
+            return
+
+        format_select = self.query_one("#format-select", Select)
+        export_format = str(format_select.value)
+
+        # Hämta output-katalog (samma som databasens katalog)
+        db_dir = Path(self.db_path).parent
+        output_dir = db_dir / "export"
+
+        selected_tables = [mart_list.get_option_at_index(i).value for i in selected]
+        table_names = [t.split(".")[-1] for t in selected_tables]
+
+        self.notify(f"Exporterar {len(table_names)} tabeller till {export_format.upper()}...")
+        self._run_export(output_dir, export_format, table_names)
+
+    @work(thread=True)
+    def _run_export(self, output_dir: Path, export_format: str, table_names: list[str]) -> None:
+        """Kör export i bakgrunden."""
+        try:
+            conn = self._get_connection()
+
+            # Ladda extensions
+            conn.execute("LOAD spatial")
+            conn.execute("LOAD h3")
+
+            def log_callback(msg: str) -> None:
+                self.app.call_from_thread(self.notify, msg)
+
+            # Använd export_mart_tables men filtrera på valda tabeller
+            exported = self._export_selected_tables(
+                conn, output_dir, export_format, table_names, log_callback
+            )
+
+            if exported:
+                self.app.call_from_thread(
+                    self.notify,
+                    f"✓ Exporterade {len(exported)} filer till {output_dir}",
+                    severity="information",
+                )
+            else:
+                self.app.call_from_thread(
+                    self.notify,
+                    "Inga filer exporterades",
+                    severity="warning",
+                )
+
+        except Exception as e:
+            self.app.call_from_thread(
+                self.notify,
+                f"Export misslyckades: {e}",
+                severity="error",
+            )
+
+    def _export_selected_tables(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        output_dir: Path,
+        export_format: str,
+        table_names: list[str],
+        on_log: callable,
+    ) -> list[Path]:
+        """Exportera specifika tabeller."""
+        format_config = {
+            "gpkg": (".gpkg", "GPKG"),
+            "geoparquet": (".parquet", None),
+            "fgb": (".fgb", "FlatGeobuf"),
+        }
+        ext, driver = format_config.get(export_format, (".fgb", "FlatGeobuf"))
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        exported_files = []
+
+        for table_name in table_names:
+            source_table = f"mart.{table_name}"
+
+            # Kontrollera antal geometrikolumner
+            geom_cols = conn.execute(f"""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'mart' AND table_name = '{table_name}'
+                AND UPPER(data_type) LIKE '%GEOMETRY%'
+            """).fetchall()
+            geom_count = len(geom_cols)
+
+            if geom_count > 1:
+                geom_names = [c[0] for c in geom_cols]
+                cols_str = ", ".join(geom_names)
+                on_log(f"⚠ HOPPAR ÖVER {table_name}: {geom_count} geometrikolumner ({cols_str})")
+                on_log(f"  → Fixa i SQL: EXCLUDE ({', '.join(geom_names[1:])})")
+                continue
+
+            # Kontrollera antal rader
+            count = conn.execute(f"SELECT COUNT(*) FROM {source_table}").fetchone()[0]
+            if count == 0:
+                on_log(f"⚠ HOPPAR ÖVER {table_name}: tom tabell (0 rader)")
+                continue
+
+            # Hämta kolumner
+            columns = conn.execute(f"""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'mart' AND table_name = '{table_name}'
+            """).fetchall()
+            col_names = [c[0] for c in columns]
+
+            # Kolla om tabellen har H3-data
+            has_h3 = any(col in col_names for col in ("h3_cell", "h3_center", "h3_cells"))
+            has_geom = geom_count > 0 or "h3_cell" in col_names
+
+            # Bygg SELECT
+            select_cols = [col for col in col_names if col.lower() not in ("geom", "geometry")]
+
+            if has_geom:
+                if "h3_cell" in col_names:
+                    select_cols.append(
+                        "ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geometry"
+                    )
+                elif "geom" in col_names:
+                    select_cols.append("geom as geometry")
+                elif "geometry" in col_names:
+                    select_cols.append("geometry")
+
+                output_path = output_dir / f"{table_name}{ext}"
+                output_path_str = str(output_path).replace("\\", "/")
+                select_sql = ", ".join(select_cols)
+
+                on_log(f"Exporterar {table_name} ({count} rader)...")
+
+                try:
+                    if driver:
+                        sql = f"""
+                            COPY (SELECT {select_sql} FROM {source_table})
+                            TO '{output_path_str}' (FORMAT GDAL, DRIVER '{driver}')
+                        """
+                    else:
+                        sql = f"""
+                            COPY (SELECT {select_sql} FROM {source_table})
+                            TO '{output_path_str}' (FORMAT PARQUET)
+                        """
+                    conn.execute(sql)
+                    exported_files.append(output_path)
+                except Exception as e:
+                    on_log(f"Fel: {table_name} - {e}")
+
+            elif has_h3:
+                # H3-data utan geometri -> CSV
+                output_path = output_dir / f"{table_name}.csv"
+                output_path_str = str(output_path).replace("\\", "/")
+                select_sql = ", ".join(select_cols)
+
+                on_log(f"Exporterar {table_name} ({count} rader) till CSV...")
+
+                try:
+                    sql = f"""
+                        COPY (SELECT {select_sql} FROM {source_table})
+                        TO '{output_path_str}' (HEADER, DELIMITER ',')
+                    """
+                    conn.execute(sql)
+                    exported_files.append(output_path)
+                except Exception as e:
+                    on_log(f"Fel: {table_name} - {e}")
+            else:
+                on_log(f"⚠ HOPPAR ÖVER {table_name}: ingen geometri eller H3-data")
+
+        return exported_files
 
     def on_unmount(self) -> None:
         """Stäng databas-anslutning."""

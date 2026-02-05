@@ -65,7 +65,8 @@ class Settings:
     DUCKDB_EXTENSIONS: list[str] = ["spatial", "parquet", "httpfs", "json", "h3"]
 
     # === DuckDB Scheman ===
-    DUCKDB_SCHEMAS: list[str] = ["raw", "staging", "staging_2", "mart"]
+    # OBS: staging-scheman (staging_004, staging_005, etc.) skapas dynamiskt
+    DUCKDB_SCHEMAS: list[str] = ["raw", "mart"]
 
     @property
     def datasets_path(self) -> Path:

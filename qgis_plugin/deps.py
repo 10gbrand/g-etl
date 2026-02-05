@@ -21,6 +21,50 @@ REQUIRED_PACKAGES = {
 }
 
 
+def _get_qgis_python_path() -> Optional[str]:
+    """Hitta Python-executable i QGIS-installationen.
+
+    På Windows pekar sys.executable ofta på QGIS själv, inte Python.
+    Vi behöver hitta den faktiska Python-executable.
+
+    Returns:
+        Sökväg till python.exe eller None om ej hittad.
+    """
+    if sys.platform != "win32":
+        # På macOS/Linux är sys.executable korrekt
+        return sys.executable
+
+    # På Windows: sys.executable kan peka på qgis-ltr-bin.exe eller liknande
+    # Vi behöver hitta python.exe i QGIS-installationen
+    # Typisk struktur: C:\Program Files\QGIS 3.x\apps\Python3x\python.exe
+
+    # Metod 1: Kolla om sys.executable redan är Python
+    exe_name = os.path.basename(sys.executable).lower()
+    if exe_name.startswith("python"):
+        return sys.executable
+
+    # Metod 2: Hitta QGIS-installationskatalogen och leta efter Python
+    # sys.executable kan vara t.ex. C:\Program Files\QGIS 3.34.14\bin\qgis-ltr-bin.exe
+    qgis_bin_dir = os.path.dirname(sys.executable)
+    qgis_root = os.path.dirname(qgis_bin_dir)  # C:\Program Files\QGIS 3.34.14
+
+    # Leta efter Python i apps/Python3x/
+    apps_dir = os.path.join(qgis_root, "apps")
+    if os.path.isdir(apps_dir):
+        for item in os.listdir(apps_dir):
+            if item.lower().startswith("python"):
+                python_exe = os.path.join(apps_dir, item, "python.exe")
+                if os.path.isfile(python_exe):
+                    return python_exe
+
+    # Metod 3: Använd sys.prefix som ofta pekar rätt
+    python_from_prefix = os.path.join(sys.prefix, "python.exe")
+    if os.path.isfile(python_from_prefix):
+        return python_from_prefix
+
+    return None
+
+
 def get_qgis_pip_path() -> Optional[str]:
     """Hitta pip i QGIS-installationen (macOS/Windows).
 
@@ -33,21 +77,22 @@ def get_qgis_pip_path() -> Optional[str]:
             "/Applications/QGIS-LTR.app/Contents/MacOS/bin/pip3",
             "/Applications/QGIS.app/Contents/MacOS/bin/pip3",
         ]
-    elif sys.platform == "win32":
-        # Windows QGIS - pip ligger i samma katalog som Python
-        # Typiskt: C:\Program Files\QGIS 3.x\apps\Python3x\Scripts\pip.exe
-        python_dir = os.path.dirname(sys.executable)
-        qgis_pip_paths = [
-            os.path.join(python_dir, "Scripts", "pip.exe"),
-            os.path.join(python_dir, "Scripts", "pip3.exe"),
-        ]
-    else:
-        # Linux - använd system pip
-        return None
+        for pip_path in qgis_pip_paths:
+            if os.path.exists(pip_path):
+                return pip_path
 
-    for pip_path in qgis_pip_paths:
-        if os.path.exists(pip_path):
-            return pip_path
+    elif sys.platform == "win32":
+        # Windows: hitta pip relativt Python-executable
+        python_path = _get_qgis_python_path()
+        if python_path:
+            python_dir = os.path.dirname(python_path)
+            pip_paths = [
+                os.path.join(python_dir, "Scripts", "pip.exe"),
+                os.path.join(python_dir, "Scripts", "pip3.exe"),
+            ]
+            for pip_path in pip_paths:
+                if os.path.exists(pip_path):
+                    return pip_path
 
     return None
 
@@ -68,9 +113,10 @@ def get_install_command(packages: List[str]) -> str:
     if qgis_pip:
         return f'"{qgis_pip}" install {pkg_str}'
 
-    # Windows: använd python -m pip
-    if sys.platform == "win32":
-        return f'"{sys.executable}" -m pip install --user {pkg_str}'
+    # Hitta rätt Python-executable
+    python_exe = _get_qgis_python_path()
+    if python_exe:
+        return f'"{python_exe}" -m pip install --user {pkg_str}'
 
     # Fallback till generiskt kommando
     return f"pip3 install --user {pkg_str}"
@@ -150,10 +196,10 @@ def install_dependencies(
     """Installera saknade dependencies.
 
     Försöker flera metoder i ordning:
-    1. QGIS-bundlad pip (macOS)
-    2. pip med --user flagga
-    3. pip med --break-system-packages (Python 3.11+)
-    4. Standard pip
+    1. QGIS-bundlad pip
+    2. python -m pip med --user flagga
+    3. python -m pip med --break-system-packages (Python 3.11+)
+    4. Standard python -m pip
 
     Args:
         packages: Lista med pip-paketnamn att installera.
@@ -168,7 +214,7 @@ def install_dependencies(
     if on_progress:
         on_progress(f"Installerar {len(packages)} paket: {', '.join(packages)}")
 
-    # Försök 1: QGIS-specifik pip (macOS)
+    # Försök 1: QGIS-specifik pip (finns på macOS och Windows)
     qgis_pip = get_qgis_pip_path()
     if qgis_pip:
         # Prova med --user först
@@ -187,9 +233,15 @@ def install_dependencies(
         ):
             return True
 
+    # Hitta rätt Python-executable (viktigt på Windows!)
+    python_exe = _get_qgis_python_path() or sys.executable
+
+    if on_progress:
+        on_progress(f"Använder Python: {python_exe}")
+
     # Försök 2: python -m pip med --user
     if _try_pip_install(
-        [sys.executable, "-m", "pip", "install", "--user", "--quiet", *packages],
+        [python_exe, "-m", "pip", "install", "--user", "--quiet", *packages],
         "pip --user",
         on_progress,
     ):
@@ -198,7 +250,7 @@ def install_dependencies(
     # Försök 3: pip med --break-system-packages (Python 3.11+ PEP 668)
     if _try_pip_install(
         [
-            sys.executable,
+            python_exe,
             "-m",
             "pip",
             "install",
@@ -214,7 +266,7 @@ def install_dependencies(
 
     # Försök 4: Standard pip (kan kräva admin-rättigheter)
     if _try_pip_install(
-        [sys.executable, "-m", "pip", "install", "--quiet", *packages],
+        [python_exe, "-m", "pip", "install", "--quiet", *packages],
         "pip standard",
         on_progress,
     ):

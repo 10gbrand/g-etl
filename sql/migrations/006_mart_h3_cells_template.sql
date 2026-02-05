@@ -1,10 +1,12 @@
 -- Mart H3-cells för {{ dataset_id }}
+-- Schema: {{ schema }}
+-- Källa: {{ prev_schema }}.{{ dataset_id }}
 -- Skapar en tabell per dataset med exploderade H3-celler
 -- Genereras automatiskt från datasets.yml
 
 -- migrate:up
 
-CREATE OR REPLACE TABLE mart.{{ dataset_id }} AS
+CREATE OR REPLACE TABLE {{ schema }}.{{ dataset_id }} AS
 SELECT
     id,
     '{{ dataset_id }}' AS dataset,
@@ -18,8 +20,8 @@ SELECT
         '+proj=longlat +datum=WGS84 +no_defs +type=crs',
         '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs'
     ) AS geom
-FROM staging_2.{{ dataset_id }}
+FROM {{ prev_schema }}.{{ dataset_id }}
 WHERE h3_cells IS NOT NULL AND h3_cells != '[]';
 
 -- migrate:down
-DROP TABLE IF EXISTS mart.{{ dataset_id }};
+DROP TABLE IF EXISTS {{ schema }}.{{ dataset_id }};

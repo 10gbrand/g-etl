@@ -1,10 +1,12 @@
--- Staging_2-mall för {{ dataset_id }}
--- Normaliserar staging till enhetlig struktur
+-- Staging-normalisering för {{ dataset_id }}
+-- Schema: {{ schema }} (baserat på filnummer 005)
+-- Källa: {{ prev_schema }}.{{ dataset_id }}
+-- Normaliserar till enhetlig struktur
 -- Genereras automatiskt från datasets.yml
 
 -- migrate:up
 
-CREATE OR REPLACE TABLE staging_2.{{ dataset_id }} AS
+CREATE OR REPLACE TABLE {{ schema }}.{{ dataset_id }} AS
 SELECT
     s._source_id_md5 AS id,
     {{ source_id_expr }} AS source_id,
@@ -22,7 +24,7 @@ SELECT
     {{ data_5_expr }} AS data_5,
     s.geom,
     ST_PointOnSurface(s.geom) AS centerpoint
-FROM staging.{{ dataset_id }} s;
+FROM {{ prev_schema }}.{{ dataset_id }} s;
 
 -- migrate:down
-DROP TABLE IF EXISTS staging_2.{{ dataset_id }};
+DROP TABLE IF EXISTS {{ schema }}.{{ dataset_id }};

@@ -1,9 +1,14 @@
-"""Exportera H3-data för visualisering.
+"""Exportera data för visualisering.
+
+Stödjer export till:
+- GeoPackage, FlatGeobuf, GeoParquet (geodata med geometri)
+- CSV (H3-data för Kepler.gl och deck.gl)
+- GeoJSON, HTML (interaktiva kartor)
 
 Användning:
-    uv run python scripts/export_h3.py --format csv
-    uv run python scripts/export_h3.py --format geojson --limit 10000
-    uv run python scripts/export_h3.py --format html
+    uv run python -m g_etl.export --format csv
+    uv run python -m g_etl.export --format geojson --limit 10000
+    uv run python -m g_etl.export --format fgb --per-table
 """
 
 import argparse
@@ -331,6 +336,168 @@ def export_flatgeobuf(conn: duckdb.DuckDBPyConnection, output_path: Path, limit:
     count = conn.execute("SELECT COUNT(DISTINCT h3_cell) FROM mart.h3_cells").fetchone()[0]
     print(f"Exporterade {count} unika H3-celler till {output_path}")
     print("\nKan öppnas i QGIS, MapLibre GL JS, eller andra GIS-verktyg.")
+
+
+def export_mart_tables(
+    conn: duckdb.DuckDBPyConnection,
+    output_dir: Path,
+    export_format: str = "fgb",
+    on_log: callable | None = None,
+) -> list[Path]:
+    """Exportera alla mart-tabeller till separata filer.
+
+    Tabeller med geometri exporteras till valt format (gpkg/fgb/geoparquet).
+    Tabeller med endast H3-data (ingen geometri) exporteras till CSV för Kepler.gl/deck.gl.
+
+    Args:
+        conn: DuckDB-anslutning med spatial och h3 extensions laddade.
+        output_dir: Katalog för output-filer.
+        export_format: Format för geodata (gpkg, geoparquet, fgb).
+        on_log: Callback för loggmeddelanden.
+
+    Returns:
+        Lista med sökvägar till exporterade filer.
+    """
+    format_config = {
+        "gpkg": (".gpkg", "GPKG"),
+        "geoparquet": (".parquet", None),
+        "fgb": (".fgb", "FlatGeobuf"),
+    }
+    ext, driver = format_config.get(export_format, (".fgb", "FlatGeobuf"))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Hämta alla tabeller i mart-schemat
+    tables = conn.execute("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'mart'
+        ORDER BY table_name
+    """).fetchall()
+
+    if on_log:
+        on_log(f"Tabeller i mart-schemat: {[t[0] for t in tables]}")
+
+    if not tables:
+        if on_log:
+            on_log("Inga tabeller i mart-schemat")
+        return []
+
+    exported_files = []
+
+    for (table_name,) in tables:
+        source_table = f"mart.{table_name}"
+
+        # Kontrollera antal geometrikolumner
+        geom_cols = conn.execute(f"""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'mart' AND table_name = '{table_name}'
+            AND UPPER(data_type) LIKE '%GEOMETRY%'
+        """).fetchall()
+        geom_count = len(geom_cols)
+
+        if geom_count > 1:
+            geom_names = [c[0] for c in geom_cols]
+            if on_log:
+                cols_str = ", ".join(geom_names)
+                on_log(f"⚠ HOPPAR ÖVER {source_table}: {geom_count} geometrikolumner ({cols_str})")
+                on_log("  → Åtgärd: Uppdatera SQL-mallen att använda EXCLUDE för extra geometrier")
+                on_log(f"  → Exempel: SELECT * EXCLUDE ({', '.join(geom_names[1:])}) FROM ...")
+            continue
+
+        # Kontrollera antal rader
+        count = conn.execute(f"SELECT COUNT(*) FROM {source_table}").fetchone()[0]
+        if count == 0:
+            if on_log:
+                on_log(f"⚠ HOPPAR ÖVER {source_table}: tom tabell (0 rader)")
+                on_log("  → Kontrollera att transform-stegen körts och att data finns i staging_2")
+            continue
+
+        # Hämta kolumner
+        columns = conn.execute(f"""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'mart' AND table_name = '{table_name}'
+        """).fetchall()
+        col_names = [c[0] for c in columns]
+
+        # Kolla om tabellen har H3-data
+        has_h3 = any(col in col_names for col in ("h3_cell", "h3_center", "h3_cells"))
+        has_geom = geom_count > 0 or "h3_cell" in col_names  # h3_cell kan konverteras till geometri
+
+        # Bygg SELECT - exkludera geometrikolumner
+        select_cols = []
+        for col in col_names:
+            if col.lower() not in ("geom", "geometry"):
+                select_cols.append(col)
+
+        # Bestäm exportformat och lägg till geometri om det behövs
+        if has_geom:
+            # Tabell med geometri -> exportera till valt geoformat
+            if "h3_cell" in col_names:
+                select_cols.append("ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geometry")
+            elif "geom" in col_names:
+                select_cols.append("geom as geometry")
+            elif "geometry" in col_names:
+                select_cols.append("geometry")
+
+            output_path = output_dir / f"{table_name}{ext}"
+            output_path_str = str(output_path).replace("\\", "/")
+            select_sql = ", ".join(select_cols)
+
+            if on_log:
+                on_log(f"Exporterar {source_table} ({count} rader) till {output_path.name}")
+
+            try:
+                if driver:
+                    sql = f"""
+                        COPY (SELECT {select_sql} FROM {source_table})
+                        TO '{output_path_str}' (FORMAT GDAL, DRIVER '{driver}')
+                    """
+                else:
+                    sql = f"""
+                        COPY (SELECT {select_sql} FROM {source_table})
+                        TO '{output_path_str}' (FORMAT PARQUET)
+                    """
+                conn.execute(sql)
+                exported_files.append(output_path)
+            except Exception as e:
+                if on_log:
+                    on_log(f"Fel vid export av {source_table}: {e}")
+
+        elif has_h3:
+            # Tabell med endast H3-data (ingen geometri) -> exportera till CSV för Kepler/deck.gl
+            output_path = output_dir / f"{table_name}.csv"
+            output_path_str = str(output_path).replace("\\", "/")
+            select_sql = ", ".join(select_cols)
+
+            if on_log:
+                on_log(
+                    f"Exporterar {source_table} ({count} rader) till "
+                    f"{output_path.name} (H3 för Kepler/deck.gl)"
+                )
+
+            try:
+                sql = f"""
+                    COPY (SELECT {select_sql} FROM {source_table})
+                    TO '{output_path_str}' (HEADER, DELIMITER ',')
+                """
+                conn.execute(sql)
+                exported_files.append(output_path)
+            except Exception as e:
+                if on_log:
+                    on_log(f"Fel vid export av {source_table}: {e}")
+
+        else:
+            if on_log:
+                on_log(f"⚠ HOPPAR ÖVER {source_table}: ingen geometri eller H3-data")
+                cols_preview = ", ".join(col_names[:5])
+                suffix = "..." if len(col_names) > 5 else ""
+                on_log(f"  → Tabellen har kolumner: {cols_preview}{suffix}")
+                on_log("  → Förväntar: geom, geometry, h3_cell, h3_center eller h3_cells")
+
+    if on_log:
+        on_log(f"Exporterade {len(exported_files)} tabeller till {output_dir}")
+
+    return exported_files
 
 
 def main():

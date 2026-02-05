@@ -98,9 +98,9 @@ Extract (parallellt):
 └── dataset3 → parquet
 
 Transform (parallellt, en temp-DB per dataset):
-├── dataset1.duckdb: init(001-003) → raw → staging → staging_2 → mart
-├── dataset2.duckdb: init(001-003) → raw → staging → staging_2 → mart
-└── dataset3.duckdb: init(001-003) → raw → staging → staging_2 → mart
+├── dataset1.duckdb: init(001-003) → raw → staging_004 → staging_005 → mart
+├── dataset2.duckdb: init(001-003) → raw → staging_004 → staging_005 → mart
+└── dataset3.duckdb: init(001-003) → raw → staging_004 → staging_005 → mart
 
 Merge:
 └── warehouse.duckdb ← alla temp-DBs
@@ -111,9 +111,11 @@ Post-merge:
 
 **Dataflöde genom DuckDB-scheman:**
 - `raw/` - Rå ingesterad data från plugins
-- `staging/` - Validering, metadata och H3-indexering (SQL)
-- `staging_2/` - Normaliserade dataset med enhetlig struktur (SQL)
+- `staging_004/` - Validering, metadata och H3-indexering (SQL)
+- `staging_005/` - Normaliserade dataset med enhetlig struktur (SQL)
 - `mart/` - Aggregerade tabeller (SQL)
+
+OBS: Staging-scheman skapas dynamiskt baserat på SQL-filens nummer (NNN i `NNN_staging_*.sql`).
 
 **Nyckelkomponenter:**
 
@@ -122,7 +124,7 @@ Post-merge:
 - `src/g_etl/admin/app.py` - TUI-applikation (Textual) som anropar PipelineRunner
 - `src/g_etl/plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)
 - `src/g_etl/sql_generator.py` - Genererar SQL från mallar + datasets.yml
-- `src/g_etl/export_h3.py` - Export av H3-data (CSV, GeoJSON, HTML, Parquet, GeoPackage, FlatGeobuf)
+- `src/g_etl/export.py` - Export (CSV, GeoJSON, HTML, Parquet, GeoPackage, FlatGeobuf)
 - `qgis_plugin/` - QGIS-plugin (ren Python, installerar dependencies automatiskt)
 - `src/g_etl/migrations/` - Migreringssystem (Migrator, CLI)
 - `sql/migrations/` - Alla SQL-filer (init + templates)
@@ -147,36 +149,42 @@ När en template redan är körd för ett dataset hoppas den över (om inte `for
 
 **SQL-struktur:**
 
-Alla SQL-filer samlade i `sql/migrations/` med namnmönstret `{löpnr}_{beskrivning}_template.sql`:
+Alla SQL-filer samlade i `sql/migrations/` med namnmönstret `{NNN}_{beskrivning}_template.sql`:
 
 ```text
 sql/migrations/
 ├── 001_db_extensions.sql                    # Installerar DuckDB extensions (körs vid init)
-├── 002_db_schemas.sql                       # Skapar scheman (körs vid init)
+├── 002_db_schemas.sql                       # Skapar bas-scheman raw, mart (körs vid init)
 ├── 003_db_makros.sql                        # SQL-makron (körs vid init)
-├── 004_staging_transform_template.sql       # Staging: validering, MD5, H3-index
-├── 005_staging2_normalisering_template.sql  # Staging_2: normaliserad struktur
-├── 006_mart_h3_cells_template.sql           # Mart: exploderade H3-celler med geometri
-└── 007_mart_compact_h3_cells_template.sql   # Mart: kompakterade H3-celler
+├── 004_staging_transform_template.sql       # staging_004: validering, MD5, H3-index
+├── 005_staging_normalisering_template.sql   # staging_005: normaliserad struktur
+├── 006_mart_h3_cells_template.sql           # mart: exploderade H3-celler med geometri
+└── 007_mart_compact_h3_cells_template.sql   # mart: kompakterade H3-celler
 ```
+
+**Dynamiska staging-scheman:**
+
+Schemanamnet genereras från SQL-filens nummer (NNN):
+- `004_staging_*.sql` → schema `staging_004`
+- `005_staging_*.sql` → schema `staging_005`
+- `NNN_mart_*.sql` → schema `mart`
 
 **SQL-mallar (generiskt system):**
 
 Templates (`*_template.sql`) körs automatiskt per dataset med parametrar från `datasets.yml`.
 Pipeline-fasen bestäms av template-namnet:
 
-| Namnmönster               | Fas       | Beskrivning                                |
-| ------------------------- | --------- | ------------------------------------------ |
-| `*_staging_transform_*`   | Staging   | Validering, metadata, H3-indexering        |
-| `*_staging2_*`            | Staging_2 | Normalisering till enhetlig struktur       |
-| `*_mart_*`                | Mart      | Aggregerade tabeller, H3-exploderade celler|
+| Namnmönster               | Schema        | Beskrivning                                |
+| ------------------------- | ------------- | ------------------------------------------ |
+| `NNN_staging_*`           | staging_NNN   | Validering, metadata, H3-indexering        |
+| `NNN_mart_*`              | mart          | Aggregerade tabeller, H3-celler            |
 
 Nya templates plockas upp automatiskt utan kodändringar:
 
 ```sql
 -- 008_mart_example_template.sql (fungerar automatiskt!)
-CREATE OR REPLACE TABLE mart.example_{{ dataset_id }} AS
-SELECT * FROM staging_2.{{ dataset_id }}
+CREATE OR REPLACE TABLE {{ schema }}.example_{{ dataset_id }} AS
+SELECT * FROM {{ prev_schema }}.{{ dataset_id }}
 WHERE '{{ klass }}' = 'naturreservat';
 ```
 
@@ -195,6 +203,8 @@ UNION ALL SELECT * FROM mart.vattenskyddsomraden;
 
 **Tillgängliga variabler:**
 
+- `{{ schema }}` - Aktuellt schema (t.ex. `staging_004`, `mart`)
+- `{{ prev_schema }}` - Föregående schema (t.ex. `raw`, `staging_004`)
 - `{{ dataset_id }}` - Dataset-ID
 - `{{ source_id_column }}` - Kolumn för käll-ID
 - `{{ klass }}`, `{{ leverantor }}` - Från field_mapping (literaler)

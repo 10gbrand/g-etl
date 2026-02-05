@@ -83,7 +83,7 @@ class PipelineRunner:
                 except Exception:
                     pass
 
-            for schema in ["raw", "staging", "staging_2", "mart"]:
+            for schema in settings.DUCKDB_SCHEMAS:
                 conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
     def _split_sql_statements(self, sql_content: str) -> list[str]:
@@ -751,16 +751,17 @@ class PipelineRunner:
         all_templates = generator.list_templates()
 
         # Filtrera templates baserat på valda faser
+        # phases: (staging, staging2, mart) - staging2 inkluderas nu i staging
         run_staging, run_staging2, run_mart = phases if phases else (True, True, True)
+        # Kombinera staging och staging2 för bakåtkompatibilitet
+        run_all_staging = run_staging or run_staging2
+
         templates = []
         for t in sorted(all_templates):
             t_lower = t.lower()
-            # staging2 måste checkas först (annars matchar staging)
-            if "_staging2_" in t_lower or "_staging_2_" in t_lower:
-                if run_staging2:
-                    templates.append(t)
-            elif "_staging_" in t_lower:
-                if run_staging:
+            if "_staging_" in t_lower:
+                # Alla staging-templates (004_staging_*, 005_staging_*, etc.)
+                if run_all_staging:
                     templates.append(t)
             elif "_mart_" in t_lower:
                 if run_mart:
@@ -787,8 +788,7 @@ class PipelineRunner:
                 [
                     p
                     for p, enabled in [
-                        ("Staging", run_staging),
-                        ("Staging_2", run_staging2),
+                        ("Staging", run_all_staging),
                         ("Mart", run_mart),
                     ]
                     if enabled
@@ -849,6 +849,12 @@ class PipelineRunner:
                             # Kör alla templates i ordning och spåra
                             for template_name in templates:
                                 migration = template_migrations.get(template_name)
+
+                                # Skapa schema dynamiskt (staging_004, staging_005, etc.)
+                                schema_sql = generator.get_schema_create_sql(template_name)
+                                if schema_sql:
+                                    temp_conn.execute(schema_sql)
+
                                 sql = generator.render_template(
                                     template_name, dataset_id, ds_config
                                 )

@@ -34,29 +34,29 @@ tasks:
   export:kepler:
     desc: Exportera H3-data till CSV för Kepler.gl
     cmds:
-      - uv run python -m g_etl.export_h3 --format csv
+      - uv run python -m g_etl.export --format csv
 
   export:geojson:
     desc: Exportera H3-data till GeoJSON
     cmds:
-      - uv run python -m g_etl.export_h3 --format geojson
+      - uv run python -m g_etl.export --format geojson
 
   export:html:
     desc: Exportera H3-data till interaktiv HTML-karta
     cmds:
-      - uv run python -m g_etl.export_h3 --format html
+      - uv run python -m g_etl.export --format html
 
   export:parquet:
     desc: Exportera H3-data till GeoParquet
     cmds:
-      - uv run python -m g_etl.export_h3 --format parquet
+      - uv run python -m g_etl.export --format parquet
 
   export:gpkg:
     desc: Exportera H3-data till GeoPackage (bäst för QGIS)
     cmds:
-      - uv run python -m g_etl.export_h3 --format gpkg
+      - uv run python -m g_etl.export --format gpkg
 
   export:fgb:
     desc: Exportera H3-data till FlatGeobuf (snabb streaming)
     cmds:
-      - uv run python -m g_etl.export_h3 --format fgb
+      - uv run python -m g_etl.export --format fgb

@@ -120,11 +120,64 @@ class SQLGenerator:
             return value[1:]
         return value
 
-    def _build_variables(self, config: DatasetConfig) -> dict[str, str]:
+    def _extract_template_number(self, template_name: str) -> str:
+        """Extrahera numret (NNN) från template-filnamn.
+
+        Exempel: '004_staging_transform_template.sql' -> '004'
+        """
+        parts = template_name.split("_")
+        if parts and parts[0].isdigit():
+            return parts[0]
+        return ""
+
+    def _get_schema_name(self, template_name: str) -> str:
+        """Generera schemanamn baserat på template-typ och nummer.
+
+        Staging-templates (004_staging_*, 005_staging_*) -> staging_004, staging_005
+        Mart-templates -> mart
+        """
+        num = self._extract_template_number(template_name)
+        if "_staging_" in template_name.lower():
+            return f"staging_{num}" if num else "staging"
+        elif "_mart_" in template_name.lower():
+            return "mart"
+        return "staging"
+
+    def _get_prev_schema_name(self, template_name: str) -> str:
+        """Hämta föregående schema för referens.
+
+        005_staging_* refererar till 004_staging_* -> staging_004
+        006_mart_* refererar till 005_staging_* -> staging_005
+        """
+        num = self._extract_template_number(template_name)
+        if not num:
+            return "raw"
+
+        num_int = int(num)
+
+        if "_staging_" in template_name.lower() and num_int > 4:
+            # Staging refererar till föregående staging
+            return f"staging_{num_int - 1:03d}"
+        elif "_staging_" in template_name.lower():
+            # Första staging refererar till raw
+            return "raw"
+        elif "_mart_" in template_name.lower():
+            # Mart refererar till senaste staging (005)
+            return "staging_005"
+
+        return "raw"
+
+    def _build_variables(self, config: DatasetConfig, template_name: str = "") -> dict[str, str]:
         """Bygg variabel-dict för substitution."""
+        # Schema-variabler baserade på template-nummer
+        schema = self._get_schema_name(template_name) if template_name else "staging"
+        prev_schema = self._get_prev_schema_name(template_name) if template_name else "raw"
+
         # Grundläggande variabler
         variables = {
             "dataset_id": config.dataset_id,
+            "schema": schema,
+            "prev_schema": prev_schema,
             "source_id_column": self._get_column_name(config.source_id_column),
             "geometry_column": config.geometry_column,
             "h3_center_resolution": str(config.h3_center_resolution),
@@ -208,8 +261,17 @@ class SQLGenerator:
             cfg = config
             cfg.dataset_id = dataset_id
 
-        variables = self._build_variables(cfg)
+        variables = self._build_variables(cfg, template_name)
         return self._substitute(template, variables)
+
+    def get_schema_create_sql(self, template_name: str) -> str:
+        """Generera SQL för att skapa schemat som template använder.
+
+        Returns:
+            SQL-sats för CREATE SCHEMA IF NOT EXISTS.
+        """
+        schema = self._get_schema_name(template_name)
+        return f"CREATE SCHEMA IF NOT EXISTS {schema};"
 
     def render_all_templates(
         self,
@@ -244,10 +306,10 @@ class SQLGenerator:
         )
 
     def staging2_sql(self, dataset_id: str, config: dict | None = None) -> str:
-        """Generera staging_2 SQL (bakåtkompatibel)."""
-        full_config = {"staging_2": config or {}}
+        """Generera staging normalisering SQL (bakåtkompatibel)."""
+        full_config = {"staging": config or {}}
         return self.render_template(
-            "005_staging2_normalisering_template.sql",
+            "005_staging_normalisering_template.sql",
             dataset_id,
             full_config,
         )

@@ -55,8 +55,12 @@ class TestSettings:
             assert ext in settings.DUCKDB_EXTENSIONS
 
     def test_duckdb_schemas(self):
-        """Kontrollera att nödvändiga scheman finns."""
-        required = ["raw", "staging", "staging_2", "mart"]
+        """Kontrollera att bas-scheman finns.
+
+        OBS: Staging-scheman (staging_004, staging_005, etc.) skapas dynamiskt
+        av pipeline_runner baserat på SQL-templates nummer.
+        """
+        required = ["raw", "mart"]
         for schema in required:
             assert schema in settings.DUCKDB_SCHEMAS
 

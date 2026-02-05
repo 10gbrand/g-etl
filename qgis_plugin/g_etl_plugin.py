@@ -10,6 +10,7 @@ from qgis.core import (
     QgsTask,
     QgsVectorLayer,
 )
+from qgis.PyQt.QtCore import QObject, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 
@@ -268,6 +269,13 @@ class GETLPlugin:
         )
 
 
+class PipelineSignals(QObject):
+    """Signaler för trådsäker kommunikation från PipelineTask."""
+
+    progress = pyqtSignal(str, float)  # message, percent
+    log = pyqtSignal(str)  # message
+
+
 class PipelineTask(QgsTask):
     """Bakgrundsuppgift för pipeline-körning."""
 
@@ -290,18 +298,31 @@ class PipelineTask(QgsTask):
         self.output_path = None
         self.error_message = None
 
+        # Skapa signaler för trådsäker GUI-uppdatering
+        self.signals = PipelineSignals()
+        self.signals.progress.connect(self._on_progress_signal)
+        self.signals.log.connect(self._on_log_signal)
+
+    def _on_progress_signal(self, message: str, percent: float):
+        """Hanterar progress-signal på huvudtråden."""
+        self.progress_dialog.set_progress(message, percent)
+
+    def _on_log_signal(self, message: str):
+        """Hanterar log-signal på huvudtråden."""
+        self.progress_dialog.add_log(message)
+
     def run(self):
         """Kör pipeline (i bakgrundstråd)."""
         try:
 
             def on_progress(message: str, percent: float):
-                # Anropas från worker-tråd, använd thread-safe metod
+                # Emit signal för trådsäker GUI-uppdatering
+                self.signals.progress.emit(message, percent)
                 self.setProgress(percent)
-                # OBS: Vi kan inte uppdatera GUI härifrån direkt
-                # Men QgsTask hanterar progress via setProgress()
 
             def on_log(message: str):
-                # Logga till konsol (GUI-uppdatering sker via signals)
+                # Emit signal för trådsäker GUI-uppdatering
+                self.signals.log.emit(message)
                 print(f"[G-ETL] {message}")
 
             self.output_path = self.runner.run_pipeline(
@@ -317,6 +338,9 @@ class PipelineTask(QgsTask):
 
         except Exception as e:
             self.error_message = str(e)
+            import traceback
+
+            self.signals.log.emit(f"Fel: {e}\n{traceback.format_exc()}")
             return False
 
     def cancel(self):

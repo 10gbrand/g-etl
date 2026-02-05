@@ -1,4 +1,6 @@
 -- Staging-mall för {{ dataset_id }}
+-- Schema: {{ schema }} (baserat på filnummer 004)
+-- Källa: {{ prev_schema }}.{{ dataset_id }}
 -- Genereras automatiskt från datasets.yml
 --
 -- Använder makron från 003_db_makros.sql (prefixade med g_)
@@ -18,9 +20,9 @@
 --   _h3_cells        - Alla H3-celler (polygon: polyfill, linje: buffrad, punkt: enkel cell)
 --   _a5_index        - A5-cell (reserverad)
 
-CREATE OR REPLACE TABLE staging.{{ dataset_id }} AS
+CREATE OR REPLACE TABLE {{ schema }}.{{ dataset_id }} AS
 WITH source_data AS (
-    SELECT * FROM raw.{{ dataset_id }}
+    SELECT * FROM {{ prev_schema }}.{{ dataset_id }}
     WHERE geom IS NOT NULL
 )
 SELECT
@@ -61,4 +63,4 @@ SELECT
 FROM source_data s;
 
 -- migrate:down
-DROP TABLE IF EXISTS staging.{{ dataset_id }};
+DROP TABLE IF EXISTS {{ schema }}.{{ dataset_id }};
