@@ -1,11 +1,13 @@
 """Pipeline runner för QGIS.
 
 Wrapper runt g_etl core som hanterar asynkron körning och export.
+
+Kompatibel med Python 3.9+ (QGIS LTR).
 """
 
 import asyncio
-from collections.abc import Callable
 from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
 
 # Core-moduler importeras efter dependency-check
 core_imported = False
@@ -21,8 +23,8 @@ def _ensure_core_imports():
 
     import yaml as _yaml
 
-    from .core.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
-    from .core.settings import settings
+    from .runner.core.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
+    from .runner.core.settings import settings
 
     yaml = _yaml
     core_imported = True
@@ -47,7 +49,18 @@ class QGISPipelineRunner:
         settings.CONFIG_DIR = self.config_dir
         settings.SQL_DIR = self.sql_dir
 
-    def list_datasets(self) -> list[dict]:
+        # Använd användarens hem-katalog för data (skrivbar plats)
+        user_data_dir = Path.home() / ".g_etl"
+        settings.DATA_DIR = user_data_dir / "data"
+        settings.RAW_DIR = user_data_dir / "data" / "raw"
+        settings.TEMP_DIR = user_data_dir / "data" / "temp"
+        settings.INPUT_DATA_DIR = user_data_dir / "input_data"
+        settings.LOGS_DIR = user_data_dir / "logs"
+
+        # Skapa kataloger
+        settings.ensure_dirs()
+
+    def list_datasets(self) -> List[Dict]:
         """Hämta tillgängliga datasets från config.
 
         Returns:
@@ -64,7 +77,7 @@ class QGISPipelineRunner:
 
         return config.get("datasets", [])
 
-    def list_dataset_types(self) -> list[str]:
+    def list_dataset_types(self) -> List[str]:
         """Hämta unika dataset-typer.
 
         Returns:
@@ -79,13 +92,13 @@ class QGISPipelineRunner:
 
     def run_pipeline(
         self,
-        dataset_ids: list[str],
+        dataset_ids: List[str],
         output_dir: Path,
         export_format: str = "gpkg",
-        phases: tuple[bool, bool, bool] = (True, True, True),
-        on_progress: Callable[[str, float], None] | None = None,
-        on_log: Callable[[str], None] | None = None,
-    ) -> Path | None:
+        phases: Tuple[bool, bool, bool] = (True, True, True),
+        on_progress: Optional[Callable[[str, float], None]] = None,
+        on_log: Optional[Callable[[str], None]] = None,
+    ) -> Optional[Path]:
         """Kör pipeline för valda datasets.
 
         Args:
@@ -122,13 +135,13 @@ class QGISPipelineRunner:
 
     async def _run_pipeline_async(
         self,
-        dataset_ids: list[str],
+        dataset_ids: List[str],
         output_dir: Path,
         export_format: str,
-        phases: tuple[bool, bool, bool],
-        on_progress: Callable[[str, float], None] | None,
-        on_log: Callable[[str], None] | None,
-    ) -> Path | None:
+        phases: Tuple[bool, bool, bool],
+        on_progress: Optional[Callable[[str, float], None]],
+        on_log: Optional[Callable[[str], None]],
+    ) -> Optional[Path]:
         """Intern async implementation av pipeline."""
         _ensure_core_imports()
 
@@ -188,6 +201,9 @@ class QGISPipelineRunner:
             # Steg 4: Post-merge SQL
             await runner.run_merged_sql(on_log=log_wrapper)
 
+            # Stäng runner innan export för att frigöra databasanslutningen
+            runner.close()
+
             # Steg 5: Export
             if on_progress:
                 on_progress("Exporterar resultat...", 90)
@@ -204,16 +220,18 @@ class QGISPipelineRunner:
 
             return output_path
 
-        finally:
+        except Exception:
+            # Säkerställ att runner stängs vid fel
             runner.close()
+            raise
 
     def _export_result(
         self,
         db_path: Path,
         output_dir: Path,
         export_format: str,
-        on_log: Callable[[str], None] | None,
-    ) -> Path | None:
+        on_log: Optional[Callable[[str], None]],
+    ) -> Optional[Path]:
         """Exportera resultat till valt format.
 
         Args:

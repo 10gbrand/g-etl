@@ -1,6 +1,7 @@
 """Qt-dialoger för G-ETL QGIS Plugin."""
 
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
@@ -24,7 +25,7 @@ from qgis.PyQt.QtWidgets import (
 class DependencyDialog(QDialog):
     """Dialog för installation av dependencies."""
 
-    def __init__(self, missing_packages: list[str], parent=None):
+    def __init__(self, missing_packages: List[str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("G-ETL - Installera beroenden")
         self.setMinimumWidth(400)
@@ -75,13 +76,13 @@ class DependencyDialog(QDialog):
 class DatasetDialog(QDialog):
     """Huvuddialog för att välja datasets och köra pipeline."""
 
-    def __init__(self, datasets: list[dict], parent=None):
+    def __init__(self, datasets: List[dict], parent=None):
         super().__init__(parent)
         self.setWindowTitle("G-ETL Pipeline")
         self.setMinimumSize(500, 600)
 
         self.datasets = datasets
-        self.dataset_checks: dict[str, QCheckBox] = {}
+        self.dataset_checks: Dict[str, QCheckBox] = {}
 
         layout = QVBoxLayout()
 
@@ -96,7 +97,7 @@ class DatasetDialog(QDialog):
         scroll_layout = QVBoxLayout()
 
         # Gruppera efter typ om tillgängligt
-        datasets_by_type: dict[str, list[dict]] = {}
+        datasets_by_type: Dict[str, List[dict]] = {}
         for ds in datasets:
             ds_type = ds.get("type", "Övriga")
             if ds_type not in datasets_by_type:
@@ -216,7 +217,7 @@ class DatasetDialog(QDialog):
         if path:
             self.output_edit.setText(path)
 
-    def get_selected_datasets(self) -> list[str]:
+    def get_selected_datasets(self) -> List[str]:
         """Hämta valda dataset-ID:n."""
         return [ds_id for ds_id, cb in self.dataset_checks.items() if cb.isChecked()]
 
@@ -233,7 +234,7 @@ class DatasetDialog(QDialog):
         """Hämta output-katalog."""
         return Path(self.output_edit.text())
 
-    def get_phases(self) -> tuple[bool, bool, bool]:
+    def get_phases(self) -> Tuple[bool, bool, bool]:
         """Hämta valda transform-faser."""
         return (
             self.staging_check.isChecked(),

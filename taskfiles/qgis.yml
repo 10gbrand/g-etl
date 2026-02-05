@@ -1,0 +1,85 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Bygg QGIS plugin zip för lokal testning
+    vars:
+      VERSION: '{{.VERSION | default "local"}}'
+    cmds:
+      - |
+        set -e
+        VERSION="{{.VERSION}}"
+        OUTPUT_DIR="$HOME/Downloads"
+
+        echo "=== Bygger G-ETL QGIS Plugin v$VERSION ==="
+
+        # Skapa temp-katalog
+        TEMP_DIR=$(mktemp -d)
+        PLUGIN_DIR="$TEMP_DIR/g_etl"
+        mkdir -p "$PLUGIN_DIR"
+
+        echo "Temp-katalog: $TEMP_DIR"
+
+        # Kopiera plugin-filer
+        echo "Kopierar plugin-filer..."
+        cp -r qgis_plugin/* "$PLUGIN_DIR/"
+
+        # Kopiera core-moduler till runner/core/
+        echo "Kopierar core-moduler..."
+        mkdir -p "$PLUGIN_DIR/runner/core"
+        cp -r src/g_etl/* "$PLUGIN_DIR/runner/core/"
+        touch "$PLUGIN_DIR/runner/__init__.py"
+
+        # Lägg till 'from __future__ import annotations' för Python 3.9-kompatibilitet
+        # Detta gör att type hints som 'str | None' evalueras som strängar
+        echo "Lägger till __future__ annotations..."
+        for f in $(find "$PLUGIN_DIR/runner/core" -name "*.py"); do
+          if ! grep -q "from __future__ import annotations" "$f"; then
+            # Skapa temp-fil med import först, sedan originalet
+            echo "from __future__ import annotations" > "$f.tmp"
+            echo "" >> "$f.tmp"
+            cat "$f" >> "$f.tmp"
+            mv "$f.tmp" "$f"
+          fi
+        done
+
+        # Transformera importer i core-filer (g_etl. -> g_etl.runner.core.)
+        echo "Transformerar importer..."
+        find "$PLUGIN_DIR/runner/core" -name "*.py" -exec perl -i -pe 's/from g_etl\./from g_etl.runner.core./g' {} \;
+        find "$PLUGIN_DIR/runner/core" -name "*.py" -exec perl -i -pe 's/import g_etl\./import g_etl.runner.core./g' {} \;
+
+        # Kopiera config och sql
+        echo "Kopierar config och sql..."
+        cp -r config "$PLUGIN_DIR/"
+        cp -r sql "$PLUGIN_DIR/"
+
+        # Uppdatera version i metadata.txt
+        echo "Sätter version till $VERSION..."
+        perl -i -pe "s/^version=.*/version=$VERSION/" "$PLUGIN_DIR/metadata.txt"
+
+        # Skapa zip
+        ZIP_NAME="g_etl_qgis-${VERSION}.zip"
+        ZIP_PATH="$OUTPUT_DIR/$ZIP_NAME"
+
+        echo "Skapar zip: $ZIP_PATH"
+        cd "$TEMP_DIR"
+        zip -r "$ZIP_PATH" g_etl -x "*.pyc" -x "*__pycache__*" -x "*.egg-info*"
+
+        # Städa upp
+        rm -rf "$TEMP_DIR"
+
+        echo ""
+        echo "=== Klar! ==="
+        echo "Plugin-zip: $ZIP_PATH"
+        echo ""
+        echo "Installation i QGIS:"
+        echo "1. Plugins → Manage and Install Plugins → Install from ZIP"
+        echo "2. Välj: $ZIP_PATH"
+        echo "3. Klicka 'Install Plugin'"
+
+  build:local:
+    desc: Bygg QGIS plugin för lokal testning (version=local)
+    cmds:
+      - task: build
+        vars:
+          VERSION: local

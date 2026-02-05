@@ -5,6 +5,7 @@ includes:
   admin: ./taskfiles/admin.yml
   pipeline: ./taskfiles/pipeline.yml
   release: ./taskfiles/release.yml
+  qgis: ./taskfiles/qgis.yml
 
 tasks:
   default:

@@ -1,6 +1,7 @@
 """G-ETL QGIS Plugin - Huvudklass."""
 
 from pathlib import Path
+from typing import List, Tuple
 
 from qgis.core import (
     Qgis,
@@ -63,7 +64,12 @@ class GETLPlugin:
         Returns:
             True om dependencies finns/installerades.
         """
-        from .deps import check_dependencies, ensure_dependencies, install_duckdb_extensions
+        from .deps import (
+            check_dependencies,
+            ensure_dependencies,
+            get_install_command,
+            install_duckdb_extensions,
+        )
 
         missing = check_dependencies()
 
@@ -83,12 +89,14 @@ class GETLPlugin:
 
                 if not success:
                     dialog.set_complete(False, "Installation misslyckades")
+                    install_cmd = get_install_command(missing)
                     QMessageBox.critical(
                         self.iface.mainWindow(),
                         "G-ETL",
-                        "Kunde inte installera nödvändiga paket.\n"
-                        "Försök installera manuellt:\n"
-                        f"pip install {' '.join(missing)}",
+                        "Kunde inte installera nödvändiga paket.\n\n"
+                        "Öppna Terminal och kör:\n"
+                        f"{install_cmd}\n\n"
+                        "Starta sedan om QGIS.",
                     )
                     return False
 
@@ -106,7 +114,7 @@ class GETLPlugin:
     def _get_runner(self):
         """Hämta eller skapa runner (lazy loading)."""
         if self.runner is None:
-            from .runner import QGISPipelineRunner
+            from .qgis_runner import QGISPipelineRunner
 
             self.runner = QGISPipelineRunner(self.plugin_dir)
         return self.runner
@@ -160,10 +168,10 @@ class GETLPlugin:
 
     def _run_pipeline(
         self,
-        dataset_ids: list[str],
+        dataset_ids: List[str],
         output_dir: Path,
         export_format: str,
-        phases: tuple[bool, bool, bool],
+        phases: Tuple[bool, bool, bool],
     ):
         """Kör pipeline i bakgrundstråd."""
         from .dialog import ProgressDialog
@@ -266,10 +274,10 @@ class PipelineTask(QgsTask):
     def __init__(
         self,
         runner,
-        dataset_ids: list[str],
+        dataset_ids: List[str],
         output_dir: Path,
         export_format: str,
-        phases: tuple[bool, bool, bool],
+        phases: Tuple[bool, bool, bool],
         progress_dialog,
     ):
         super().__init__("G-ETL Pipeline", QgsTask.CanCancel)
