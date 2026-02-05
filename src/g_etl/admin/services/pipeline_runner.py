@@ -726,7 +726,7 @@ class PipelineRunner:
     async def run_parallel_transform(
         self,
         parquet_files: list[tuple[str, str]],
-        phases: tuple[bool, bool, bool] | None = None,
+        phases: tuple[bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> list[tuple[str, str]]:
@@ -738,7 +738,8 @@ class PipelineRunner:
 
         Args:
             parquet_files: Lista av (dataset_id, parquet_path)
-            phases: Tuple med (staging, staging2, mart) - vilka faser som ska köras
+            phases: Tuple med (staging, mart) - vilka faser som ska köras.
+                    Staging inkluderar alla staging-templates (004, 005, etc.)
                     Om None körs alla faser.
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
@@ -751,17 +752,15 @@ class PipelineRunner:
         all_templates = generator.list_templates()
 
         # Filtrera templates baserat på valda faser
-        # phases: (staging, staging2, mart) - staging2 inkluderas nu i staging
-        run_staging, run_staging2, run_mart = phases if phases else (True, True, True)
-        # Kombinera staging och staging2 för bakåtkompatibilitet
-        run_all_staging = run_staging or run_staging2
+        # phases: (staging, mart) - staging inkluderar alla staging-templates
+        run_staging, run_mart = phases if phases else (True, True)
 
         templates = []
         for t in sorted(all_templates):
             t_lower = t.lower()
             if "_staging_" in t_lower:
                 # Alla staging-templates (004_staging_*, 005_staging_*, etc.)
-                if run_all_staging:
+                if run_staging:
                     templates.append(t)
             elif "_mart_" in t_lower:
                 if run_mart:
@@ -788,7 +787,7 @@ class PipelineRunner:
                 [
                     p
                     for p, enabled in [
-                        ("Staging", run_all_staging),
+                        ("Staging", run_staging),
                         ("Mart", run_mart),
                     ]
                     if enabled
@@ -1410,18 +1409,17 @@ class MockPipelineRunner(PipelineRunner):
     async def run_parallel_transform(
         self,
         parquet_files: list[tuple[str, str]],
-        phases: tuple[bool, bool, bool] | None = None,
+        phases: tuple[bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
     ) -> list[tuple[str, str]]:
         """Mock parallell transform."""
-        run_staging, run_staging2, run_mart = phases if phases else (True, True, True)
+        run_staging, run_mart = phases if phases else (True, True)
         phases_str = ", ".join(
             [
                 p
                 for p, enabled in [
                     ("Staging", run_staging),
-                    ("Staging_2", run_staging2),
                     ("Mart", run_mart),
                 ]
                 if enabled

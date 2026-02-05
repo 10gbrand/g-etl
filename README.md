@@ -97,512 +97,20 @@ tar -xzf g_etl-*.tar.gz
 ./g_etl
 ```
 
-## Pipeline-översikt
-
-```mermaid
-flowchart TB
-    subgraph Extract["1. EXTRACT (Parallellt)"]
-        direction LR
-        A1[zip_geopackage] --> P1[(parquet)]
-        A2[zip_shapefile] --> P2[(parquet)]
-        A3[geoparquet] --> P3[(parquet)]
-    end
-
-    subgraph Transform["2. PARALLELL TRANSFORM (temp-DB per dataset)"]
-        direction TB
-        P1 --> T1["dataset1.duckdb<br/>raw→staging→staging_2→mart"]
-        P2 --> T2["dataset2.duckdb<br/>raw→staging→staging_2→mart"]
-        P3 --> T3["dataset3.duckdb<br/>raw→staging→staging_2→mart"]
-    end
-
-    subgraph Merge["3. MERGE"]
-        direction TB
-        T1 --> W[(warehouse.duckdb)]
-        T2 --> W
-        T3 --> W
-    end
-
-    subgraph PostMerge["4. POST-MERGE SQL"]
-        direction TB
-        W --> PM["*_merged.sql<br/>(aggregeringar)"]
-        PM --> WF[(mart.all_h3_cells)]
-    end
-
-    Extract --> Transform --> Merge --> PostMerge
-
-    style Extract fill:#e1f5fe
-    style Transform fill:#fff3e0
-    style Merge fill:#fce4ec
-    style PostMerge fill:#e8f5e9
-```
-
-### Parallell arkitektur
-
-Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelism utan fillåsning:
-
-| Fas        | Parallelism        | Beskrivning                              |
-| ---------- | ------------------ | ---------------------------------------- |
-| Extract    | `cpu_count()`      | I/O-bound, alla kärnor                   |
-| Transform  | `cpu_count() // 2` | CPU-bound, DuckDB paralleliserar internt |
-| Merge      | Sekventiell        | Kombinerar temp-DBs                      |
-| Post-merge | Sekventiell        | Aggregeringar över alla datasets         |
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  EXTRACT (parallellt, cpu_count() workers)                      │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
-│  │ dataset1 │  │ dataset2 │  │ dataset3 │  │ dataset4 │  ...    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
-│       │             │             │             │               │
-│       ▼             ▼             ▼             ▼               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
-│  │ .parquet │  │ .parquet │  │ .parquet │  │ .parquet │         │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
-└───────┼─────────────┼─────────────┼─────────────┼───────────────┘
-        │             │             │             │
-        ▼             ▼             ▼             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  TRANSFORM (parallellt, cpu_count()//2 workers)                 │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
-│  │ temp1.db │  │ temp2.db │  │ temp3.db │  │ temp4.db │  ...    │
-│  │ 004→007  │  │ 004→007  │  │ 004→007  │  │ 004→007  │         │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
-└───────┼─────────────┼─────────────┼─────────────┼───────────────┘
-        │             │             │             │
-        └─────────────┴──────┬──────┴─────────────┘
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  MERGE (sekventiell)                                            │
-│  └── warehouse.duckdb ← alla temp-DBs                           │
-└───────────────────────────────┬─────────────────────────────────┘
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  POST-MERGE (sekventiell)                                       │
-│  └── *_merged.sql → aggregeringar över alla datasets            │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Detaljerat pipeline-flöde
-
-### Steg 1: Extract (Plugins → raw.*)
-
-Plugins laddar ner och läser in geodata till `raw`-schemat i DuckDB.
-
-| Plugin | Källa | Format | status |
-|--------|-------|--------|--------|
-| `zip_geopackage` | URL eller lokal fil | Zippad GeoPackage | Klart |
-| `zip_shapefile` | URL eller lokal fil | Zippad Shapefile | Klart |
-| `wfs` | OGC WFS-tjänst | GML/JSON | Plan |
-| `geoparquet` | URL, S3 eller lokal fil | GeoParquet | Plan |
-| `lantmateriet` | Lantmäteriets API | JSON | Plan |
-| `mssql` | Microsoft SQL Server | ODBC | Plan |
-
-**Resultat:** `raw.{dataset}` – rådata med originalkolumner och geometri.
-
-### Steg 2: Staging (SQL + H3 → staging.*)
-
-#### 2a. Makron från migrering
-`sql/migrations/003_db_makros.sql` definierar makron för H3-beräkning och
-geometrihantering. Dessa installeras automatiskt när pipelinen körs.
-
-#### 2b. Genererad SQL
-`004_staging_transform_template.sql` renderas med värden från `field_mapping:` i `datasets.yml`.
-Staging-tabellen skapas med:
-
-- Validerad geometri (`geom`)
-- Metadata: `_imported_at`, `_geom_md5`, `_attr_md5`, `_json_data`
-- Centroid i WGS84: `_centroid_lat`, `_centroid_lng`
-- **H3-index** (beräknas direkt i SQL via DuckDB H3 extension):
-  - `_h3_index` (res 13, ~43 m²) – centroid-cell
-  - `_h3_cells` (res 11, ~2149 m²) – alla celler inom polygonen
-- Käll-ID: `_source_id_md5`
-
-H3-beräkningen sker med DuckDB:s community extension:
-```sql
-h3_latlng_to_cell_string(lat, lng, 13) AS _h3_index,
-to_json(h3_polygon_wkt_to_cells_string(wkt, 11)) AS _h3_cells
-```
-
-**Resultat:** `staging.{dataset}` – standardiserad data med H3-index.
-
-### Steg 3: Staging_2 (SQL → staging_2.*)
-
-Normaliserar alla dataset till en enhetlig struktur.
-
-#### 3a. Genererad SQL
-`005_staging2_normalisering_template.sql` renderas med värden från `field_mapping:` i `datasets.yml`.
-Konfigurationen styr hur data mappas:
-
-```sql
-SELECT
-    _source_id_md5 AS id,
-    source_id,           -- Käll-ID (t.ex. beteckn)
-    klass,               -- Typ av skydd (biotopskydd, naturreservat, etc.)
-    grupp,               -- Undergrupp
-    typ,                 -- Specifik typ
-    leverantor,          -- Dataleverantör (sks, nvv, sgu)
-    h3_center,           -- H3-cell för centroid
-    h3_cells,            -- Alla H3-celler inom polygonen
-    json_data,           -- Originaldata som JSON
-    data_1..data_5,      -- Extra datafält
-    geom
-FROM staging.{dataset}
-```
-
-**Resultat:** `staging_2.{dataset}` – normaliserade dataset med enhetlig struktur.
-
-### Steg 4: Mart (SQL → mart.*)
-
-Aggregerar alla dataset till en gemensam H3-tabell.
-
-#### 4a. Mart-templates
-
-`006_mart_h3_cells_template.sql` och `007_mart_compact_h3_cells_template.sql` körs per dataset och skapar:
-
-- `mart.{dataset}` – exploderade H3-celler med geometri
-- `mart.{dataset}_compact` – kompakterade H3-celler
-
-#### 4b. Post-merge SQL (`*_merged.sql`)
-
-Efter merge körs `*_merged.sql`-filer för aggregeringar över alla datasets:
-
-- Kombinerar alla dataset-tabeller
-- Skapar gemensamma vyer/tabeller
-
-**Resultat:** `mart.*` – aggregerade tabeller redo för analys och export.
-
-## Transform-pipeline
-
-Transformationer körs parallellt med separata temp-databaser per dataset:
-
-```
-1. Extract (parallellt)
-   └── Plugins → parquet-filer (en per dataset)
-
-2. Parallell Transform (temp-DB per dataset)
-   ├── dataset1.duckdb ──┐
-   ├── dataset2.duckdb ──┼── Kör alla templates: 004→005→006→007
-   └── dataset3.duckdb ──┘
-
-3. Merge
-   └── Kombinera alla temp-DBs → warehouse.duckdb
-
-4. Post-merge SQL
-   └── sql/migrations/*_merged.sql → Aggregeringar över alla datasets
-```
-
-### SQL-templates
-
-Templates (`*_template.sql`) körs automatiskt per dataset:
-
-| Fil                                       | Fas       | Beskrivning               |
-| ----------------------------------------- | --------- | ------------------------- |
-| `004_staging_transform_template.sql`      | Staging   | Validering, MD5, H3-index |
-| `005_staging2_normalisering_template.sql` | Staging_2 | Normaliserad struktur     |
-| `006_mart_h3_cells_template.sql`          | Mart      | Exploderade H3-celler     |
-| `007_mart_compact_h3_cells_template.sql`  | Mart      | Kompakterade H3-celler    |
-
-```text
-Template-rendering:
-
-┌─────────────────────────────────────────────────────────────────┐
-│  datasets.yml                                                   │
-│  └── field_mapping:                                             │
-│        source_id_column: $beteckn                               │
-│        klass: biotopskydd                                       │
-│        grupp: $Biotyp                                           │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  SQLGenerator.render_template()                                 │
-│  ├── Läs template: 004_staging_transform_template.sql           │
-│  ├── Ersätt {{ dataset_id }} → "sksbiotopskydd"                 │
-│  ├── Ersätt {{ source_id_column }} → "beteckn"                  │
-│  ├── Ersätt {{ klass }} → "biotopskydd"                         │
-│  └── Ersätt {{ grupp_expr }} → "COALESCE(s.Biotyp::VARCHAR,'')" │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Renderad SQL                                                   │
-│  └── CREATE TABLE staging.sksbiotopskydd AS ...                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Post-merge SQL (`*_merged.sql`)
-
-Filer med suffix `_merged.sql` körs EFTER merge för aggregeringar:
-
-```sql
--- sql/migrations/100_all_h3_cells_merged.sql
-CREATE OR REPLACE TABLE mart.all_h3_cells AS
-SELECT * FROM mart.naturreservat
-UNION ALL SELECT * FROM mart.biotopskyddsomraden
-UNION ALL SELECT * FROM mart.vattenskyddsomraden;
-.
-.
-```
-
-## DuckDB-scheman
-
-| Schema      | Syfte                                                      |
-| ----------- | ---------------------------------------------------------- |
-| `raw`       | Rå ingesterad data direkt från plugins                     |
-| `staging`   | Validerad geometri, metadata och H3-index                  |
-| `staging_2` | Normaliserade dataset med enhetlig struktur                |
-| `mart`      | Aggregerade tabeller (h3_cells) redo för analys och export |
-
-```text
-Dataflöde genom scheman (per dataset):
-
-┌─────────────────────────────────────────────────────────────────┐
-│  raw.{dataset}                                                  │
-│  └── Originaldata från plugin (alla kolumner, geometri)        │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ 004_staging_transform_template.sql
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  staging.{dataset}                                              │
-│  ├── Validerad geometri (geom)                                  │
-│  ├── Metadata (_imported_at, _geom_md5, _attr_md5)              │
-│  ├── H3-index (_h3_index, _h3_cells)                            │
-│  └── JSON-data (_json_data)                                     │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ 005_staging2_normalisering_template.sql
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  staging_2.{dataset}                                            │
-│  ├── Normaliserade fält (klass, grupp, typ, leverantor)         │
-│  ├── H3 (h3_center, h3_cells)                                   │
-│  └── Extra data (data_1..data_5)                                │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ 006/007_mart_*_template.sql
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  mart.{dataset}                                                 │
-│  └── En rad per H3-cell med geometri                            │
-│                                                                 │
-│  mart.{dataset}_compact                                         │
-│  └── Kompakterade H3-celler (färre rader)                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Projektstruktur
-
-```
-g-etl/
-├── config/
-│   └── datasets.yml       # Dataset-konfiguration
-├── src/g_etl/             # Python-paket
-│   ├── settings.py        # Inställningar (H3, CRS, parallelism)
-│   ├── plugins/           # Datakälla-plugins
-│   │   ├── base.py        # Basklass för plugins
-│   │   ├── zip_geopackage.py
-│   │   ├── zip_shapefile.py
-│   │   ├── wfs.py
-│   │   ├── geoparquet.py
-│   │   ├── lantmateriet.py
-│   │   └── mssql.py
-│   ├── admin/             # Textual TUI-applikation
-│   │   ├── screens/       # TUI-skärmar
-│   │   └── services/
-│   │       └── pipeline_runner.py  # GEMENSAM parallell pipeline-logik
-│   ├── migrations/        # Migreringssystem
-│   │   ├── cli.py
-│   │   └── migrator.py
-│   ├── pipeline.py        # CLI (anropar PipelineRunner)
-│   ├── sql_generator.py   # Genererar SQL från templates
-│   └── export.py          # Export av data
-├── sql/
-│   └── migrations/        # Alla SQL-filer
-│       ├── 001_db_extensions.sql           # Init: extensions
-│       ├── 002_db_schemas.sql              # Init: scheman
-│       ├── 003_db_makros.sql               # Init: makron
-│       ├── 004_staging_transform_template.sql    # Template: staging
-│       ├── 005_staging2_normalisering_template.sql # Template: staging_2
-│       ├── 006_mart_h3_cells_template.sql        # Template: mart
-│       ├── 007_mart_compact_h3_cells_template.sql # Template: mart
-│       └── 100_*_merged.sql                # Post-merge aggregeringar
-├── data/
-│   ├── raw/               # Parquet-filer från extract
-│   ├── temp/              # Temporära per-dataset DBs
-│   └── warehouse.duckdb   # Slutlig databas
-└── logs/                  # Pipeline-loggar
-```
-
-**CLI och TUI delar samma `PipelineRunner`** i `src/g_etl/admin/services/pipeline_runner.py`.
-Det finns ingen duplicerad pipeline-logik.
-
-```text
-CLI/TUI-arkitektur:
-
-┌──────────────────────┐     ┌──────────────────────┐
-│  CLI (pipeline.py)   │     │  TUI (admin/app.py)  │
-│  └── task run        │     │  └── Textual UI      │
-└──────────┬───────────┘     └──────────┬───────────┘
-           │                            │
-           └────────────┬───────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  PipelineRunner (admin/services/pipeline_runner.py)             │
-│  ├── run_parallel_extract()    # Parallell datahämtning        │
-│  ├── run_parallel_transform()  # Parallell SQL-transformering  │
-│  ├── merge_databases()         # Kombinera temp-DBs            │
-│  └── run_merged_sql()          # Post-merge aggregeringar      │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Plugins + SQLGenerator + Migrator                              │
-│  └── Gemensam logik för all pipeline-körning                    │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Komma igång
-
-### Förutsättningar
-
-- Python 3.11+
-- UV (pakethanterare)
-- Docker (valfritt)
-
-### Installation
-
-#### Alternativ 1: Förbyggd binär
-
-Ladda ner och kör utan Python-installation:
-
-```bash
-# Välj rätt arkitektur:
-# Linux ARM64 (t.ex. Raspberry Pi, AWS Graviton):
-curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-linux-arm64.tar.gz
-
-# Linux x86_64 (vanliga servrar):
-curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-linux-x86_64.tar.gz
-
-# macOS ARM64 (Apple Silicon):
-curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-macos-arm64.tar.gz
-
-# Packa upp och kör
-tar -xzf g_etl-*.tar.gz
-chmod +x g_etl
-./g_etl
-```
-
-Arkivet innehåller:
-
-- `g_etl` – Kompilerad binär (Nuitka)
-- `config/` – Konfiguration (datasets.yml)
-- `sql/` – SQL-templates för transformationer
-
-#### Alternativ 2: Docker
-
-Kör med publicerad Docker image:
-
-```bash
-# Ladda ner setup-script (skapar config/, sql/, data/)
-curl -sL https://raw.githubusercontent.com/10gbrand/g-etl/main/setup.sh | bash
-
-# Starta TUI
-docker compose run --rm admin
-```
-
-Efter setup finns följande struktur:
-```
-./config/datasets.yml   # Dataset-konfiguration (redigera för att välja datakällor)
-./sql/migrations/       # SQL-templates för transformationer
-./input_data/           # Lokala geodatafiler (monteras som /app/input_data i containern)
-./data/                 # Resultat sparas här (warehouse.duckdb, parquet-filer)
-```
-
-```bash
-# Alternativ: kör direkt utan lokala config-filer (använder inbyggda)
-docker run -it -v $(pwd)/data:/app/data ghcr.io/10gbrand/g-etl:latest
-
-# Specifik version
-docker pull ghcr.io/10gbrand/g-etl:1.0.0
-```
-
-#### Alternativ 3: Devbox
-
-Om du använder [Devbox](https://www.jetify.com/devbox):
-
-```bash
-# ARM64 (default)
-devbox run download-binary
-
-# x86_64
-devbox run download-binary linux-x86_64
-
-# macOS
-devbox run download-binary macos-arm64
-
-# Specifik version
-devbox run download-binary linux-arm64 v0.1.0
-
-# Kör binären
-./g_etl
-```
-
-#### Alternativ 4: Från källkod
-
-```bash
-# Installera dependencies
-task py:install
-```
-
-### Köra pipelinen
-
-```bash
-# Hela pipelinen (extract + transform)
-task pipeline:run
-
-# Endast extract
-task pipeline:extract
-
-# Endast transform (staging + staging_2 + mart SQL)
-task pipeline:transform
-
-# Specifikt dataset
-task pipeline:dataset -- sksbiotopskydd
-
-# Datasets av viss typ
-task pipeline:type -- skogsstyrelsen_gpkg
-
-# Lista tillgängliga typer
-task pipeline:types
-```
-
-### Admin TUI
-
-```bash
-# Starta TUI
-task admin:run
-
-# Med mockdata (för test)
-task admin:mock
-```
-
-### DuckDB CLI
-
-```bash
-# Öppna Harlequin (DuckDB GUI)
-task hq
-
-# Eller direkt med duckdb
-duckdb data/warehouse.duckdb
-
-# Exempel-queries
-SELECT COUNT(*) FROM mart.h3_cells;
-SELECT * FROM mart.sksbiotopskydd LIMIT 10;
-```
+## Dokumentation
+
+| Dokumentation | Beskrivning |
+| ------------- | ----------- |
+| [docs/architecture.md](docs/architecture.md) | Pipeline-översikt, parallell arkitektur, DuckDB-scheman |
+| [docs/development.md](docs/development.md) | Lägga till dataset och plugins, SQL-generator, makron |
+| [config/readme.md](config/readme.md) | Dataset-konfiguration och field_mapping |
+| [config/datasets.md](config/datasets.md) | Lista över alla dataset |
+| [qgis_plugin/README.md](qgis_plugin/README.md) | QGIS Plugin-dokumentation |
 
 ## Dataset
 
-Dataset konfigureras i `config/datasets.yml` med `field_mapping:` för alla transformationer:
+Dataset konfigureras i `config/datasets.yml` med `field_mapping:` för alla transformationer.
+Se [config/readme.md](config/readme.md) för detaljerad dokumentation och [config/datasets.md](config/datasets.md) för lista över alla dataset.
 
 ```yaml
 datasets:
@@ -619,159 +127,51 @@ datasets:
       grupp: $Biotyp               # hämta värde från kolumn "Biotyp"
       typ: $Naturtyp               # hämta värde från kolumn "Naturtyp"
       leverantor: sks              # literal sträng
-
-  - id: nationalparker
-    name: Nationalparker
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/.../NP.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: nationalpark
-      leverantor: nvv
 ```
 
-### field_mapping-konfiguration
+## Komma igång
 
-| Fält               | Syntax                  | Beskrivning                              |
-| ------------------ | ----------------------- | ---------------------------------------- |
-| `source_id_column` | `$kolumn`               | Kolumn för käll-ID (alltid kolumnref)    |
-| `klass`            | `värde`                 | Klassificering (literal sträng)          |
-| `grupp`            | `$kolumn` eller `värde` | Undergrupp - kolumnref eller literal     |
-| `typ`              | `$kolumn` eller `värde` | Specifik typ - kolumnref eller literal   |
-| `leverantor`       | `värde`                 | Dataleverantör (literal sträng)          |
-| `data_mappings`    | `{data_1: $kol}`        | Extra kolumner att inkludera             |
+### Förutsättningar
 
-**Syntax:**
+- Python 3.11+
+- UV (pakethanterare)
+- Docker (valfritt)
 
-- `$prefix` = kolumnreferens (hämtar värde från data)
-- utan prefix = literal sträng
+### Installation
 
-## H3 Spatial Index
+#### Alternativ 1: Docker
 
-Projektet använder [H3](https://h3geo.org/) för spatial indexering:
-
-| Inställning | Värde | Cellstorlek |
-|-------------|-------|-------------|
-| `H3_RESOLUTION` | 13 | ~43 m² (centroid) |
-| `H3_POLYFILL_RESOLUTION` | 11 | ~2149 m² (polyfill) |
-
-H3-celler möjliggör snabba spatial joins och aggregeringar utan geometriberäkningar.
-
-## Parallelism
-
-Parallelliteten auto-detekteras baserat på antal CPU-kärnor (`src/g_etl/settings.py`):
-
-```python
-MAX_CONCURRENT_EXTRACTS = cpu_count()      # I/O-bound: alla kärnor
-MAX_CONCURRENT_SQL = cpu_count() // 2      # CPU-bound: halva (DuckDB paralleliserar internt)
+```bash
+curl -sL https://raw.githubusercontent.com/10gbrand/g-etl/main/setup.sh | bash
+docker compose run --rm admin
 ```
 
-Temporära databaser sparas i `data/temp/` och rensas automatiskt efter merge.
+#### Alternativ 2: Förbyggd binär
 
-## Koordinatsystem
-
-**OBS:** DuckDB:s spatial extension har en bugg med EPSG-koder. Använd PROJ4-strängar:
-
-```sql
--- Korrekt (PROJ4)
-ST_Transform(geom,
-    '+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
-    '+proj=longlat +datum=WGS84 +no_defs')
-
--- Fel (EPSG) - ger felaktiga koordinater!
-ST_Transform(geom, 'EPSG:3006', 'EPSG:4326')
+```bash
+# Välj rätt arkitektur och ladda ner
+curl -LO https://github.com/10gbrand/g-etl/releases/latest/download/g_etl-linux-arm64.tar.gz
+tar -xzf g_etl-*.tar.gz
+./g_etl
 ```
 
-## Utveckling
+#### Alternativ 3: Från källkod
 
-### Lägga till nytt dataset
-
-1. Lägg till konfiguration i `config/datasets.yml` med `field_mapping:` block
-2. Kör pipelinen - SQL genereras automatiskt baserat på konfigurationen
-
-Alla SQL-transformationer genereras via `SQLGenerator` som renderar templates med
-värden från `field_mapping`. Du behöver inte skapa SQL-filer för varje dataset.
-
-### SQL-generator
-
-Pipelinen använder `g_etl.sql_generator` för att rendera SQL-templates:
-
-```python
-from g_etl.sql_generator import SQLGenerator
-
-generator = SQLGenerator()
-
-# Lista alla templates
-templates = generator.list_templates()
-# ['004_staging_transform_template.sql', '005_staging2_normalisering_template.sql', ...]
-
-# Rendera en specifik template
-sql = generator.render_template(
-    "004_staging_transform_template.sql",
-    "sksbiotopskydd",
-    {"field_mapping": {"source_id_column": "$beteckn", "klass": "biotopskydd"}}
-)
-
-# Rendera alla templates för ett dataset
-for template_name, sql in generator.render_all_templates("sksbiotopskydd", config):
-    conn.execute(sql)
+```bash
+task py:install
+task admin:run
 ```
 
-### Makron
+### DuckDB CLI
 
-SQL-templates använder makron definierade i `sql/migrations/003_db_makros.sql`.
-Alla makron har prefixet `g_` för att särskilja från standard SQL-funktioner.
+```bash
+# Öppna Harlequin (DuckDB GUI)
+task hq
 
-| Makro                                     | Beskrivning                           |
-| ----------------------------------------- | ------------------------------------- |
-| `g_validate_geom(geom)`                   | Validera och fixa geometri            |
-| `g_to_wgs84(geom)`                        | Transformera till WGS84               |
-| `g_centroid_lat(geom)`                    | Centroid latitud i WGS84              |
-| `g_centroid_lng(geom)`                    | Centroid longitud i WGS84             |
-| `g_h3_center(geom, resolution)`           | H3-cell för centroid                  |
-| `g_h3_polygon_cells(geom, resolution)`    | H3-celler för polygon (polyfill)      |
-| `g_h3_line_cells(geom, buffer, res)`      | H3-celler för linje (buffrad)         |
-| `g_h3_point_cells(geom, resolution)`      | H3-cell för punkt (som array)         |
-| `g_geom_md5(geom)`                        | MD5-hash av geometri                  |
-| `g_json_without_geom(json)`               | Ta bort geometri från JSON            |
+# Eller direkt med duckdb
+duckdb data/warehouse.duckdb
 
-Bakåtkompatibla alias utan prefix finns också (`validate_geom`, `h3_centroid`, etc.).
-
-### Lägga till ny plugin
-
-1. Skapa `src/g_etl/plugins/{namn}.py` som ärver från `SourcePlugin`
-2. Implementera `extract(config, conn, on_log, on_progress)`
-3. Registrera i `src/g_etl/plugins/__init__.py`
-
-```text
-Plugin-arkitektur:
-
-┌─────────────────────────────────────────────────────────────────┐
-│  datasets.yml                                                   │
-│  └── plugin: zip_geopackage                                     │
-│      url: https://example.com/data.zip                          │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  PipelineRunner.run_parallel_extract()                          │
-│  └── get_plugin("zip_geopackage") → ZipGeoPackagePlugin         │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Plugin.extract(config, conn, on_log, on_progress)              │
-│  ├── 1. Ladda ner fil (URL → lokal cache)                       │
-│  ├── 2. Läs geodata (GeoPackage/Shapefile/etc.)                 │
-│  ├── 3. Skriv till parquet (data/raw/{dataset}.parquet)         │
-│  └── 4. Returnera metadata (rows, columns, etc.)                │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  data/raw/{dataset}.parquet                                     │
-│  └── Redo för transform-fasen                                   │
-└─────────────────────────────────────────────────────────────────┘
+# Exempel-queries
+SELECT COUNT(*) FROM mart.h3_cells;
+SELECT * FROM mart.sksbiotopskydd LIMIT 10;
 ```

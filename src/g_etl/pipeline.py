@@ -6,7 +6,6 @@ Använder samma PipelineRunner som TUI:n för parallell körning.
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -14,74 +13,10 @@ import yaml
 # Importera den gemensamma PipelineRunner
 from g_etl.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
 from g_etl.settings import settings
+from g_etl.utils.logging import FileLogger
 
-# =============================================================================
-# Loggning
-# =============================================================================
-
-MAX_LOG_FILES = 20  # Behåll de senaste N loggfilerna
-
-
-class FileLogger:
-    """Hanterar loggning till fil med automatisk rotation."""
-
-    def __init__(self, logs_dir: Path | None = None, prefix: str = "pipeline"):
-        self.logs_dir = logs_dir or settings.LOGS_DIR
-        self.prefix = prefix
-        self.log_file: Path | None = None
-        self._file_handle = None
-
-    def start(self) -> Path:
-        """Startar en ny loggfil och returnerar sökvägen."""
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
-
-        # Skapa filnamn med timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        self.log_file = self.logs_dir / f"{self.prefix}_{timestamp}.log"
-
-        # Öppna filen
-        self._file_handle = open(self.log_file, "w", encoding="utf-8")
-
-        # Skriv header
-        self._file_handle.write("# G-ETL Pipeline Log\n")
-        self._file_handle.write(f"# Startad: {datetime.now().isoformat()}\n")
-        self._file_handle.write(f"# {'=' * 58}\n\n")
-        self._file_handle.flush()
-
-        # Rensa gamla loggfiler
-        self._cleanup_old_logs()
-
-        return self.log_file
-
-    def log(self, message: str):
-        """Skriv ett meddelande till loggfilen."""
-        if self._file_handle:
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            self._file_handle.write(f"[{timestamp}] {message}\n")
-            self._file_handle.flush()
-
-    def close(self):
-        """Stänger loggfilen."""
-        if self._file_handle:
-            self._file_handle.write(f"\n# {'=' * 58}\n")
-            self._file_handle.write(f"# Avslutad: {datetime.now().isoformat()}\n")
-            self._file_handle.close()
-            self._file_handle = None
-
-    def _cleanup_old_logs(self):
-        """Ta bort gamla loggfiler, behåll de senaste MAX_LOG_FILES."""
-        log_files = sorted(
-            self.logs_dir.glob(f"{self.prefix}_*.log"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
-
-        # Ta bort filer utöver MAX_LOG_FILES
-        for old_file in log_files[MAX_LOG_FILES:]:
-            try:
-                old_file.unlink()
-            except OSError:
-                pass  # Ignorera om filen inte kan tas bort
+# Re-exportera FileLogger för bakåtkompatibilitet (används av TUI)
+__all__ = ["FileLogger", "Pipeline", "PipelineResult"]
 
 
 @dataclass

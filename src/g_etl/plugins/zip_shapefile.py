@@ -10,6 +10,7 @@ import duckdb
 import requests
 
 from g_etl.plugins.base import ExtractResult, SourcePlugin
+from g_etl.utils.downloader import download_file_streaming, is_url
 
 # Modul-nivå cache för nedladdade och extraherade filer
 # Cache: URL -> (zip_path, extracted_dir_path)
@@ -25,11 +26,6 @@ def _get_url_lock(url: str) -> threading.Lock:
         if url not in _url_locks:
             _url_locks[url] = threading.Lock()
         return _url_locks[url]
-
-
-def _is_url(source: str) -> bool:
-    """Kontrollera om källan är en URL eller lokal sökväg."""
-    return source.startswith(("http://", "https://"))
 
 
 def clear_shapefile_cache() -> None:
@@ -91,37 +87,18 @@ class ZipShapefilePlugin(SourcePlugin):
                     self._log("Använder cachad nedladdning", on_log)
                     return zip_path, extract_dir
 
-            # Ladda ner
-            self._log(f"Laddar ner {url}...", on_log)
-            self._progress(0.0, "Ansluter...", on_progress)
-
-            if _is_url(url):
-                response = requests.get(url, timeout=300, stream=True)
-                response.raise_for_status()
-
-                total_size = int(response.headers.get("content-length", 0))
-                downloaded = 0
-
-                with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        tmp_zip.write(chunk)
-                        downloaded += len(chunk)
-
-                        if total_size > 0 and downloaded % (8192 * 100) < 8192:
-                            dl_fraction = downloaded / total_size
-                            dl_progress = dl_fraction * 0.5
-                            mb_done = downloaded / (1024 * 1024)
-                            mb_total = total_size / (1024 * 1024)
-                            self._progress(
-                                dl_progress,
-                                f"Laddar ner {mb_done:.1f}/{mb_total:.1f} MB...",
-                                on_progress,
-                            )
-                        elif total_size == 0 and downloaded % (8192 * 100) < 8192:
-                            mb_done = downloaded / (1024 * 1024)
-                            self._progress(0.25, f"Laddar ner {mb_done:.1f} MB...", on_progress)
-
-                    zip_path = tmp_zip.name
+            # Ladda ner eller använd lokal fil
+            if is_url(url):
+                # Använd centraliserad downloader för URL:er
+                downloaded_path = download_file_streaming(
+                    url=url,
+                    suffix=".zip",
+                    timeout=300,
+                    on_log=on_log,
+                    on_progress=on_progress,
+                    progress_weight=0.5,
+                )
+                zip_path = str(downloaded_path)
             else:
                 # Lokal fil
                 zip_path = url

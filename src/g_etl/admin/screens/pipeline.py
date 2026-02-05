@@ -35,6 +35,7 @@ from g_etl.admin.widgets.multi_progress import (
     TaskStatus,
 )
 from g_etl.pipeline import FileLogger
+from g_etl.settings import settings
 
 
 class DatasetRow(Static):
@@ -158,7 +159,7 @@ class PipelineScreen(Screen):
     #main-content {
         layout: grid;
         grid-size: 2 1;
-        grid-columns: 55 1fr;
+        grid-columns: 110 1fr;
         height: 1fr;
     }
 
@@ -291,8 +292,7 @@ class PipelineScreen(Screen):
                 yield Label("Faser:")
                 yield Checkbox("1. Extract", id="phase-extract", value=True)
                 yield Checkbox("2. Staging", id="phase-staging", value=True)
-                yield Checkbox("3. Staging_2", id="phase-staging2", value=True)
-                yield Checkbox("4. Mart", id="phase-mart", value=True)
+                yield Checkbox("3. Mart", id="phase-mart", value=True)
 
         with Horizontal(id="main-content"):
             with Container(id="datasets-panel"):
@@ -395,13 +395,12 @@ class PipelineScreen(Screen):
         self.query_one("#btn-all", Button).disabled = running
         self.query_one("#btn-stop", Button).disabled = not running
 
-    def get_selected_phases(self) -> tuple[bool, bool, bool, bool]:
+    def get_selected_phases(self) -> tuple[bool, bool, bool]:
         """Hämta vilka faser som är valda."""
         extract = self.query_one("#phase-extract", Checkbox).value
         staging = self.query_one("#phase-staging", Checkbox).value
-        staging2 = self.query_one("#phase-staging2", Checkbox).value
         mart = self.query_one("#phase-mart", Checkbox).value
-        return extract, staging, staging2, mart
+        return extract, staging, mart
 
     @work(exclusive=True)
     async def run_datasets(self, datasets: list[Dataset]) -> None:
@@ -411,8 +410,8 @@ class PipelineScreen(Screen):
             return
 
         # Hämta valda faser
-        run_extract, run_staging, run_staging2, run_mart = self.get_selected_phases()
-        if not any([run_extract, run_staging, run_staging2, run_mart]):
+        run_extract, run_staging, run_mart = self.get_selected_phases()
+        if not any([run_extract, run_staging, run_mart]):
             self.log_message("Ingen fas vald - välj minst en fas att köra")
             return
 
@@ -421,7 +420,6 @@ class PipelineScreen(Screen):
             for name, enabled in [
                 ("Extract", run_extract),
                 ("Staging", run_staging),
-                ("Staging_2", run_staging2),
                 ("Mart", run_mart),
             ]
             if enabled
@@ -429,7 +427,7 @@ class PipelineScreen(Screen):
         self.log_message(f"Kör faser: {phases_str}")
 
         # Starta filloggning
-        self._file_logger = FileLogger(prefix="tui_pipeline")
+        self._file_logger = FileLogger(logs_dir=settings.LOGS_DIR, prefix="tui_pipeline")
         log_file = self._file_logger.start()
         self.log_message(f"Loggar till: {log_file}")
 
@@ -570,9 +568,9 @@ class PipelineScreen(Screen):
             self.log_message("Hoppar över Extract-fasen")
 
         # === FAS 2: PARALLELL TRANSFORM ===
-        # Kör alla templates (staging, staging_2, mart) parallellt per dataset
+        # Kör alla staging-templates och mart parallellt per dataset
         # med separata temp-DBs för äkta parallelism
-        run_any_sql = run_staging or run_staging2 or run_mart
+        run_any_sql = run_staging or run_mart
         if run_any_sql and self._running and all_parquet_files:
             progress.set_phase("2. Parallell Transform")
 
@@ -609,10 +607,10 @@ class PipelineScreen(Screen):
                         message=event.message or "Fel",
                     )
 
-            # Kör parallell transform (raw → staging → staging_2 → mart per dataset)
+            # Kör parallell transform (raw → staging → mart per dataset)
             temp_dbs = await self.runner.run_parallel_transform(
                 parquet_files=all_parquet_files,
-                phases=(run_staging, run_staging2, run_mart),
+                phases=(run_staging, run_mart),
                 on_log=lambda msg: self.log_message(msg),
                 on_event=on_transform_event,
             )

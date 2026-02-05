@@ -172,7 +172,7 @@ class GETLPlugin:
         dataset_ids: List[str],
         output_dir: Path,
         export_format: str,
-        phases: Tuple[bool, bool, bool],
+        phases: Tuple[bool, bool],
     ):
         """Kör pipeline i bakgrundstråd."""
         from .dialog import ProgressDialog
@@ -285,7 +285,7 @@ class PipelineTask(QgsTask):
         dataset_ids: List[str],
         output_dir: Path,
         export_format: str,
-        phases: Tuple[bool, bool, bool],
+        phases: Tuple[bool, bool],
         progress_dialog,
     ):
         super().__init__("G-ETL Pipeline", QgsTask.CanCancel)

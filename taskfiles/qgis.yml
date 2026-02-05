@@ -65,6 +65,12 @@ tasks:
         cd "$TEMP_DIR"
         zip -r "$ZIP_PATH" g_etl -x "*.pyc" -x "*__pycache__*" -x "*.egg-info*"
 
+        # Verifiera zip-struktur
+        echo ""
+        echo "=== Verifierar zip-struktur ==="
+        echo "Förväntad mappstruktur i zip (ska vara 'g_etl/'):"
+        unzip -l "$ZIP_PATH" | head -5
+
         # Städa upp
         rm -rf "$TEMP_DIR"
 
@@ -72,10 +78,16 @@ tasks:
         echo "=== Klar! ==="
         echo "Plugin-zip: $ZIP_PATH"
         echo ""
+        echo "⚠️  VIKTIGT: Plugin-mappen MÅSTE heta 'g_etl' (med underscore)"
+        echo "   Om QGIS installerar med annat namn, använd: task qgis:install"
+        echo ""
         echo "Installation i QGIS:"
         echo "1. Plugins → Manage and Install Plugins → Install from ZIP"
         echo "2. Välj: $ZIP_PATH"
         echo "3. Klicka 'Install Plugin'"
+        echo "4. Starta om QGIS"
+        echo ""
+        echo "Alternativt för utveckling: task qgis:install"
 
   build:local:
     desc: Bygg QGIS plugin för lokal testning (version=local)
@@ -83,3 +95,98 @@ tasks:
       - task: build
         vars:
           VERSION: local
+
+  install:
+    desc: Installera plugin direkt till QGIS plugins-mapp (för utveckling)
+    cmds:
+      - |
+        set -e
+        PLUGINS_DIR="$HOME/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins"
+        PLUGIN_DEST="$PLUGINS_DIR/g_etl"
+
+        echo "=== Installerar G-ETL till QGIS ==="
+        echo "Målmapp: $PLUGIN_DEST"
+
+        # Ta bort gammal installation (både g_etl och ev. felnamnad g_etl_qgis)
+        if [ -d "$PLUGINS_DIR/g_etl_qgis" ]; then
+          echo "Tar bort felnamnad mapp: g_etl_qgis"
+          rm -rf "$PLUGINS_DIR/g_etl_qgis"
+        fi
+        if [ -d "$PLUGIN_DEST" ]; then
+          echo "Tar bort gammal installation..."
+          rm -rf "$PLUGIN_DEST"
+        fi
+
+        # Skapa plugin-mapp
+        mkdir -p "$PLUGIN_DEST"
+
+        # Kopiera plugin-filer
+        echo "Kopierar plugin-filer..."
+        cp -r qgis_plugin/* "$PLUGIN_DEST/"
+
+        # Kopiera core-moduler till runner/core/
+        echo "Kopierar core-moduler..."
+        mkdir -p "$PLUGIN_DEST/runner/core"
+        cp -r src/g_etl/* "$PLUGIN_DEST/runner/core/"
+        touch "$PLUGIN_DEST/runner/__init__.py"
+
+        # Lägg till 'from __future__ import annotations' för Python 3.9-kompatibilitet
+        echo "Lägger till __future__ annotations..."
+        find "$PLUGIN_DEST/runner/core" -name "*.py" -exec sh -c '
+          for f; do
+            if ! grep -q "from __future__ import annotations" "$f"; then
+              { echo "from __future__ import annotations"; echo ""; cat "$f"; } > "$f.tmp"
+              mv "$f.tmp" "$f"
+            fi
+          done
+        ' _ {} +
+
+        # Transformera importer i core-filer
+        echo "Transformerar importer..."
+        find "$PLUGIN_DEST/runner/core" -name "*.py" -exec perl -i -pe 's/from g_etl\./from g_etl.runner.core./g' {} +
+        find "$PLUGIN_DEST/runner/core" -name "*.py" -exec perl -i -pe 's/import g_etl\./import g_etl.runner.core./g' {} +
+
+        # Kopiera config och sql
+        echo "Kopierar config och sql..."
+        cp -r config "$PLUGIN_DEST/"
+        cp -r sql "$PLUGIN_DEST/"
+
+        # Ta bort pycache
+        find "$PLUGIN_DEST" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+        echo ""
+        echo "=== Klar! ==="
+        echo "Plugin installerat till: $PLUGIN_DEST"
+        echo ""
+        echo "Starta om QGIS för att ladda plugin:et."
+
+  check:
+    desc: Kontrollera QGIS plugin-installation
+    cmds:
+      - |
+        set -e
+        PLUGINS_DIR="$HOME/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins"
+
+        echo "=== Kontrollerar QGIS plugin-installation ==="
+        echo "Plugin-mapp: $PLUGINS_DIR"
+        echo ""
+
+        # Kolla om g_etl finns
+        if [ -d "$PLUGINS_DIR/g_etl" ]; then
+          echo "✅ g_etl finns (korrekt)"
+          ls -la "$PLUGINS_DIR/g_etl/" | head -10
+        else
+          echo "❌ g_etl saknas"
+        fi
+
+        echo ""
+
+        # Kolla om felnamnad version finns
+        if [ -d "$PLUGINS_DIR/g_etl_qgis" ]; then
+          echo "⚠️  g_etl_qgis finns (felaktigt namn!)"
+          echo "   Kör 'task qgis:install' för att fixa detta."
+        fi
+
+        echo ""
+        echo "Alla plugins i mappen:"
+        ls -1 "$PLUGINS_DIR" | grep -E "^g_etl" || echo "(inga g_etl-plugins)"

@@ -10,13 +10,18 @@ import duckdb
 import requests
 
 from g_etl.plugins.base import ExtractResult, SourcePlugin
+from g_etl.utils.downloader import download_file_streaming, is_url
 
-# Modul-nivå cache för nedladdade och extraherade filer
-# Cache: URL -> (zip_path, extracted_dir_path)
+# Modul-nivå cache för nedladdade zip-filer
+# Cache: URL -> zip_path (behåller bara zip-filen, inte extraktionskatalogen)
+# Varje dataset extraherar till sin egen katalog för att undvika race conditions
 # Rensas via clear_download_cache()
-_extract_cache: dict[str, tuple[str, str]] = {}
+_zip_cache: dict[str, str] = {}
 _url_locks: dict[str, threading.Lock] = {}
 _global_lock = threading.Lock()
+
+# Håll koll på alla extraktionskataloger för städning
+_extract_dirs: list[str] = []
 
 
 def _get_url_lock(url: str) -> threading.Lock:
@@ -27,27 +32,28 @@ def _get_url_lock(url: str) -> threading.Lock:
         return _url_locks[url]
 
 
-def _is_url(source: str) -> bool:
-    """Kontrollera om källan är en URL eller lokal sökväg."""
-    return source.startswith(("http://", "https://"))
-
-
 def clear_download_cache() -> None:
     """Rensa nedladdningscachen och ta bort temporära filer."""
-    global _extract_cache, _url_locks
+    global _zip_cache, _url_locks, _extract_dirs
     import shutil
 
     with _global_lock:
-        for url, (zip_path, extract_dir) in _extract_cache.items():
+        # Ta bort cachade zip-filer
+        for url, zip_path in _zip_cache.items():
             try:
                 Path(zip_path).unlink(missing_ok=True)
             except Exception:
                 pass
+
+        # Ta bort alla extraktionskataloger
+        for extract_dir in _extract_dirs:
             try:
                 shutil.rmtree(extract_dir, ignore_errors=True)
             except Exception:
                 pass
-        _extract_cache.clear()
+
+        _zip_cache.clear()
+        _extract_dirs.clear()
         _url_locks.clear()
 
 
@@ -85,34 +91,48 @@ class ZipGeoPackagePlugin(SourcePlugin):
             )
 
         # Bestäm om det är URL eller lokal fil
-        is_remote = _is_url(url)
+        is_remote = is_url(url)
 
         try:
             if is_remote:
-                # === NEDLADDNING + EXTRAKTION FRÅN URL (med cache och lås) ===
+                # === NEDLADDNING FRÅN URL (med cache och lås) ===
+                # Steg 1: Hämta eller ladda ner zip-fil (med lås)
                 url_lock = _get_url_lock(url)
                 with url_lock:
-                    if url in _extract_cache:
-                        # Använd cachad extraherad katalog
-                        _, extract_dir = _extract_cache[url]
-                        self._log(f"Använder cachad extraktion för {url}", on_log)
-                        self._progress(0.6, "Använder cachad extraktion...", on_progress)
+                    if url in _zip_cache:
+                        # Använd cachad zip-fil
+                        zip_path = _zip_cache[url]
+                        self._log(f"Använder cachad nedladdning för {url}", on_log)
+                        self._progress(0.5, "Använder cachad nedladdning...", on_progress)
                     else:
-                        # Ladda ned och extrahera
-                        zip_path = self._download_zip(url, on_log, on_progress)
+                        # Ladda ned zip-fil med centraliserad downloader
+                        downloaded_path = download_file_streaming(
+                            url=url,
+                            suffix=".zip",
+                            timeout=300,
+                            on_log=on_log,
+                            on_progress=on_progress,
+                            progress_weight=0.5,
+                        )
+                        zip_path = str(downloaded_path)
+                        _zip_cache[url] = zip_path
 
-                        self._log("Extraherar GeoPackage...", on_log)
-                        self._progress(0.6, "Extraherar zip-arkiv...", on_progress)
+                # Steg 2: Extrahera till UNIK katalog per dataset
+                # Använd URL-lås även för extraktion för att undvika filkonflikt
+                # när flera trådar läser samma cachade zip-fil samtidigt
+                self._log("Extraherar GeoPackage...", on_log)
+                self._progress(0.6, "Extraherar zip-arkiv...", on_progress)
 
-                        # Extrahera till persistent katalog (inte TemporaryDirectory som raderas)
-                        extract_dir = tempfile.mkdtemp(prefix="g-etl-gpkg-")
-                        with zipfile.ZipFile(zip_path, "r") as zf:
-                            zf.extractall(extract_dir)
+                extract_dir = tempfile.mkdtemp(prefix=f"g-etl-gpkg-{table_name}-")
+                with _global_lock:
+                    _extract_dirs.append(extract_dir)
 
-                        # Cacha både zip och extraherad katalog
-                        _extract_cache[url] = (zip_path, extract_dir)
+                # Lås under extraktion för att undvika att flera trådar läser zip samtidigt
+                with url_lock:
+                    with zipfile.ZipFile(zip_path, "r") as zf:
+                        zf.extractall(extract_dir)
 
-                # Hitta .gpkg-fil i cachad katalog
+                # Hitta .gpkg-fil i extraherad katalog
                 if gpkg_filename:
                     gpkg_path = Path(extract_dir) / gpkg_filename
                 else:
@@ -242,55 +262,6 @@ class ZipGeoPackagePlugin(SourcePlugin):
             error_msg = f"Fel vid läsning av GeoPackage: {e}"
             self._log(error_msg, on_log)
             return ExtractResult(success=False, message=error_msg)
-
-    def _download_zip(
-        self,
-        url: str,
-        on_log: Callable[[str], None] | None = None,
-        on_progress: Callable[[float, str], None] | None = None,
-    ) -> str:
-        """Ladda ner zip-fil från URL till temporär fil.
-
-        Returns:
-            Sökväg till den nedladdade filen.
-        """
-        self._log(f"Laddar ner {url}...", on_log)
-        self._progress(0.0, "Ansluter...", on_progress)
-
-        response = requests.get(url, timeout=300, stream=True)
-        response.raise_for_status()
-
-        total_size = int(response.headers.get("content-length", 0))
-        downloaded = 0
-
-        # Spara till temporär fil
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
-            for chunk in response.iter_content(chunk_size=8192):
-                tmp_zip.write(chunk)
-                downloaded += len(chunk)
-
-                # Rapportera var ~800KB (var 100:e chunk) för att inte överbelasta TUI
-                if total_size > 0 and downloaded % (8192 * 100) < 8192:
-                    # Nedladdning tar 0.0-0.5 av total progress
-                    dl_fraction = downloaded / total_size
-                    dl_progress = dl_fraction * 0.5
-                    mb_done = downloaded / (1024 * 1024)
-                    mb_total = total_size / (1024 * 1024)
-                    self._progress(
-                        dl_progress,
-                        f"Laddar ner {mb_done:.1f}/{mb_total:.1f} MB...",
-                        on_progress,
-                    )
-                elif total_size == 0 and downloaded % (8192 * 100) < 8192:
-                    # Okänd storlek, visa bara nedladdat
-                    mb_done = downloaded / (1024 * 1024)
-                    self._progress(
-                        0.25,  # Fast vid 25% för okänd storlek
-                        f"Laddar ner {mb_done:.1f} MB...",
-                        on_progress,
-                    )
-
-            return tmp_zip.name
 
     def _read_with_geopandas(
         self,

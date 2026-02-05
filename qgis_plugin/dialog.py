@@ -176,9 +176,6 @@ class DatasetDialog(QDialog):
         self.staging_check = QCheckBox("Staging")
         self.staging_check.setChecked(True)
         phases_layout.addWidget(self.staging_check)
-        self.staging2_check = QCheckBox("Staging 2")
-        self.staging2_check.setChecked(True)
-        phases_layout.addWidget(self.staging2_check)
         self.mart_check = QCheckBox("Mart")
         self.mart_check.setChecked(True)
         phases_layout.addWidget(self.mart_check)
@@ -234,11 +231,10 @@ class DatasetDialog(QDialog):
         """Hämta output-katalog."""
         return Path(self.output_edit.text())
 
-    def get_phases(self) -> Tuple[bool, bool, bool]:
-        """Hämta valda transform-faser."""
+    def get_phases(self) -> Tuple[bool, bool]:
+        """Hämta valda transform-faser (staging, mart)."""
         return (
             self.staging_check.isChecked(),
-            self.staging2_check.isChecked(),
             self.mart_check.isChecked(),
         )
 

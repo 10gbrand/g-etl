@@ -19,13 +19,14 @@ def _ensure_core_imports():
     if core_imported:
         return
 
-    global PipelineRunner, PipelineEvent, settings, yaml, export_mart_tables
+    global PipelineRunner, PipelineEvent, settings, yaml, export_mart_tables, FileLogger
 
     import yaml as _yaml
 
     from .runner.core.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
     from .runner.core.export import export_mart_tables
     from .runner.core.settings import settings
+    from .runner.core.utils.logging import FileLogger
 
     yaml = _yaml
     core_imported = True
@@ -96,7 +97,7 @@ class QGISPipelineRunner:
         dataset_ids: List[str],
         output_dir: Path,
         export_format: str = "gpkg",
-        phases: Tuple[bool, bool, bool] = (True, True, True),
+        phases: Tuple[bool, bool] = (True, True),
         on_progress: Optional[Callable[[str, float], None]] = None,
         on_log: Optional[Callable[[str], None]] = None,
     ) -> Optional[Path]:
@@ -106,7 +107,7 @@ class QGISPipelineRunner:
             dataset_ids: Lista med dataset-ID:n att köra.
             output_dir: Katalog för output-filer.
             export_format: Exportformat (gpkg, geoparquet, fgb).
-            phases: Tuple med (staging, staging2, mart) - vilka faser som ska köras.
+            phases: Tuple med (staging, mart) - vilka faser som ska köras.
             on_progress: Callback för progress (message, percent 0-100).
             on_log: Callback för loggmeddelanden.
 
@@ -139,7 +140,7 @@ class QGISPipelineRunner:
         dataset_ids: List[str],
         output_dir: Path,
         export_format: str,
-        phases: Tuple[bool, bool, bool],
+        phases: Tuple[bool, bool],
         on_progress: Optional[Callable[[str, float], None]],
         on_log: Optional[Callable[[str], None]],
     ) -> Optional[Path]:
@@ -149,28 +150,42 @@ class QGISPipelineRunner:
         output_dir.mkdir(parents=True, exist_ok=True)
         db_path = output_dir / "warehouse.duckdb"
 
+        # Starta filloggning (använder centraliserad FileLogger från core)
+        file_logger = FileLogger(
+            logs_dir=settings.LOGS_DIR,
+            prefix="qgis_pipeline",
+            title="G-ETL QGIS Plugin Log",
+            max_log_files=None,  # Ingen automatisk rotation i QGIS
+        )
+        log_file = file_logger.start()
+
+        def log_wrapper(msg: str):
+            """Logga till både fil och callback."""
+            file_logger.log(msg)
+            if on_log:
+                on_log(msg)
+
         runner = PipelineRunner(
             db_path=str(db_path),
             sql_path=self.sql_dir,
         )
 
         try:
+            log_wrapper(f"Loggar till: {log_file}")
+            log_wrapper(f"Kör pipeline för {len(dataset_ids)} dataset(s): {', '.join(dataset_ids)}")
+            log_wrapper(f"Output-katalog: {output_dir}")
+
             # Hämta dataset-configs
             all_datasets = self.list_datasets()
             dataset_configs = [ds for ds in all_datasets if ds.get("id") in dataset_ids]
 
             if not dataset_configs:
-                if on_log:
-                    on_log("Inga datasets valda")
+                log_wrapper("Inga datasets valda")
                 return None
 
             # Steg 1: Extract
             if on_progress:
                 on_progress("Extraherar data...", 10)
-
-            def log_wrapper(msg: str):
-                if on_log:
-                    on_log(msg)
 
             extract_result = await runner.run_parallel_extract(
                 dataset_configs=dataset_configs,
@@ -179,8 +194,7 @@ class QGISPipelineRunner:
             )
 
             if not extract_result.success:
-                if on_log:
-                    on_log(f"Extract misslyckades: {extract_result.failed}")
+                log_wrapper(f"Extract misslyckades: {extract_result.failed}")
                 return None
 
             # Steg 2: Transform
@@ -219,12 +233,16 @@ class QGISPipelineRunner:
             if on_progress:
                 on_progress("Klar!", 100)
 
+            log_wrapper("Pipeline slutförd!")
             return output_path
 
-        except Exception:
+        except Exception as e:
             # Säkerställ att runner stängs vid fel
             runner.close()
+            log_wrapper(f"Pipeline misslyckades: {e}")
             raise
+        finally:
+            file_logger.close()
 
     def _export_result(
         self,
@@ -267,7 +285,14 @@ class QGISPipelineRunner:
             if not exported_files:
                 return None
 
-            return output_dir
+            # Returnera första compact-filen (dessa fungerar bäst med QGIS)
+            # eftersom de inte har JSON-arrayer som orsakar "Unsupported field type"
+            compact_files = [f for f in exported_files if "compact" in f.stem]
+            if compact_files:
+                return compact_files[0]
+
+            # Annars returnera första filen
+            return exported_files[0]
 
         except Exception as e:
             if on_log:

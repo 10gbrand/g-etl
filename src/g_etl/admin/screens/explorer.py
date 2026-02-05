@@ -24,6 +24,9 @@ from textual.widgets.selection_list import Selection
 
 from g_etl.admin.services.db_session import get_current_db_path
 from g_etl.admin.widgets.ascii_map import BrailleMapWidget
+from g_etl.export import export_mart_tables
+from g_etl.pipeline import FileLogger
+from g_etl.settings import settings
 
 
 class TableInfo(Static):
@@ -532,7 +535,8 @@ class ExplorerScreen(Screen):
         db_dir = Path(self.db_path).parent
         output_dir = db_dir / "export"
 
-        selected_tables = [mart_list.get_option_at_index(i).value for i in selected]
+        # selected innehåller redan värdena (t.ex. 'mart.sksbiotopskydd')
+        selected_tables = list(selected)
         table_names = [t.split(".")[-1] for t in selected_tables]
 
         self.notify(f"Exporterar {len(table_names)} tabeller till {export_format.upper()}...")
@@ -541,28 +545,43 @@ class ExplorerScreen(Screen):
     @work(thread=True)
     def _run_export(self, output_dir: Path, export_format: str, table_names: list[str]) -> None:
         """Kör export i bakgrunden."""
+        # Starta filloggning
+        file_logger = FileLogger(logs_dir=settings.LOGS_DIR, prefix="tui_export")
+        log_file = file_logger.start()
+
+        def log_callback(msg: str) -> None:
+            file_logger.log(msg)
+            self.app.call_from_thread(self.notify, msg)
+
         try:
+            log_callback(f"Loggar till: {log_file}")
+            log_callback(f"Exporterar {len(table_names)} tabeller till {export_format.upper()}")
+            log_callback(f"Output-katalog: {output_dir}")
+
             conn = self._get_connection()
 
             # Ladda extensions
             conn.execute("LOAD spatial")
             conn.execute("LOAD h3")
 
-            def log_callback(msg: str) -> None:
-                self.app.call_from_thread(self.notify, msg)
-
-            # Använd export_mart_tables men filtrera på valda tabeller
-            exported = self._export_selected_tables(
-                conn, output_dir, export_format, table_names, log_callback
+            # Använd gemensam export-funktion med tabellfilter
+            exported = export_mart_tables(
+                conn=conn,
+                output_dir=output_dir,
+                export_format=export_format,
+                on_log=log_callback,
+                table_names=table_names,
             )
 
             if exported:
+                log_callback(f"✓ Exporterade {len(exported)} filer till {output_dir}")
                 self.app.call_from_thread(
                     self.notify,
                     f"✓ Exporterade {len(exported)} filer till {output_dir}",
                     severity="information",
                 )
             else:
+                log_callback("Inga filer exporterades")
                 self.app.call_from_thread(
                     self.notify,
                     "Inga filer exporterades",
@@ -570,122 +589,14 @@ class ExplorerScreen(Screen):
                 )
 
         except Exception as e:
+            log_callback(f"Export misslyckades: {e}")
             self.app.call_from_thread(
                 self.notify,
                 f"Export misslyckades: {e}",
                 severity="error",
             )
-
-    def _export_selected_tables(
-        self,
-        conn: duckdb.DuckDBPyConnection,
-        output_dir: Path,
-        export_format: str,
-        table_names: list[str],
-        on_log: callable,
-    ) -> list[Path]:
-        """Exportera specifika tabeller."""
-        format_config = {
-            "gpkg": (".gpkg", "GPKG"),
-            "geoparquet": (".parquet", None),
-            "fgb": (".fgb", "FlatGeobuf"),
-        }
-        ext, driver = format_config.get(export_format, (".fgb", "FlatGeobuf"))
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        exported_files = []
-
-        for table_name in table_names:
-            source_table = f"mart.{table_name}"
-
-            # Kontrollera antal geometrikolumner
-            geom_cols = conn.execute(f"""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'mart' AND table_name = '{table_name}'
-                AND UPPER(data_type) LIKE '%GEOMETRY%'
-            """).fetchall()
-            geom_count = len(geom_cols)
-
-            if geom_count > 1:
-                geom_names = [c[0] for c in geom_cols]
-                cols_str = ", ".join(geom_names)
-                on_log(f"⚠ HOPPAR ÖVER {table_name}: {geom_count} geometrikolumner ({cols_str})")
-                on_log(f"  → Fixa i SQL: EXCLUDE ({', '.join(geom_names[1:])})")
-                continue
-
-            # Kontrollera antal rader
-            count = conn.execute(f"SELECT COUNT(*) FROM {source_table}").fetchone()[0]
-            if count == 0:
-                on_log(f"⚠ HOPPAR ÖVER {table_name}: tom tabell (0 rader)")
-                continue
-
-            # Hämta kolumner
-            columns = conn.execute(f"""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'mart' AND table_name = '{table_name}'
-            """).fetchall()
-            col_names = [c[0] for c in columns]
-
-            # Kolla om tabellen har H3-data
-            has_h3 = any(col in col_names for col in ("h3_cell", "h3_center", "h3_cells"))
-            has_geom = geom_count > 0 or "h3_cell" in col_names
-
-            # Bygg SELECT
-            select_cols = [col for col in col_names if col.lower() not in ("geom", "geometry")]
-
-            if has_geom:
-                if "h3_cell" in col_names:
-                    select_cols.append(
-                        "ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geometry"
-                    )
-                elif "geom" in col_names:
-                    select_cols.append("geom as geometry")
-                elif "geometry" in col_names:
-                    select_cols.append("geometry")
-
-                output_path = output_dir / f"{table_name}{ext}"
-                output_path_str = str(output_path).replace("\\", "/")
-                select_sql = ", ".join(select_cols)
-
-                on_log(f"Exporterar {table_name} ({count} rader)...")
-
-                try:
-                    if driver:
-                        sql = f"""
-                            COPY (SELECT {select_sql} FROM {source_table})
-                            TO '{output_path_str}' (FORMAT GDAL, DRIVER '{driver}')
-                        """
-                    else:
-                        sql = f"""
-                            COPY (SELECT {select_sql} FROM {source_table})
-                            TO '{output_path_str}' (FORMAT PARQUET)
-                        """
-                    conn.execute(sql)
-                    exported_files.append(output_path)
-                except Exception as e:
-                    on_log(f"Fel: {table_name} - {e}")
-
-            elif has_h3:
-                # H3-data utan geometri -> CSV
-                output_path = output_dir / f"{table_name}.csv"
-                output_path_str = str(output_path).replace("\\", "/")
-                select_sql = ", ".join(select_cols)
-
-                on_log(f"Exporterar {table_name} ({count} rader) till CSV...")
-
-                try:
-                    sql = f"""
-                        COPY (SELECT {select_sql} FROM {source_table})
-                        TO '{output_path_str}' (HEADER, DELIMITER ',')
-                    """
-                    conn.execute(sql)
-                    exported_files.append(output_path)
-                except Exception as e:
-                    on_log(f"Fel: {table_name} - {e}")
-            else:
-                on_log(f"⚠ HOPPAR ÖVER {table_name}: ingen geometri eller H3-data")
-
-        return exported_files
+        finally:
+            file_logger.close()
 
     def on_unmount(self) -> None:
         """Stäng databas-anslutning."""

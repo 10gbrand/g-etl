@@ -11,7 +11,10 @@ Användning:
     uv run python -m g_etl.export --format fgb --per-table
 """
 
+from __future__ import annotations
+
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
@@ -342,9 +345,10 @@ def export_mart_tables(
     conn: duckdb.DuckDBPyConnection,
     output_dir: Path,
     export_format: str = "fgb",
-    on_log: callable | None = None,
+    on_log: Callable[[str], None] | None = None,
+    table_names: list[str] | None = None,
 ) -> list[Path]:
-    """Exportera alla mart-tabeller till separata filer.
+    """Exportera mart-tabeller till separata filer.
 
     Tabeller med geometri exporteras till valt format (gpkg/fgb/geoparquet).
     Tabeller med endast H3-data (ingen geometri) exporteras till CSV för Kepler.gl/deck.gl.
@@ -354,6 +358,7 @@ def export_mart_tables(
         output_dir: Katalog för output-filer.
         export_format: Format för geodata (gpkg, geoparquet, fgb).
         on_log: Callback för loggmeddelanden.
+        table_names: Lista med specifika tabellnamn att exportera. Om None, exporteras alla.
 
     Returns:
         Lista med sökvägar till exporterade filer.
@@ -367,12 +372,17 @@ def export_mart_tables(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Hämta alla tabeller i mart-schemat
-    tables = conn.execute("""
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'mart'
-        ORDER BY table_name
-    """).fetchall()
+    # Hämta tabeller i mart-schemat (filtrerat om table_names anges)
+    if table_names:
+        # Filtrera på angivna tabeller
+        tables = [(name,) for name in table_names]
+    else:
+        # Hämta alla tabeller
+        tables = conn.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'mart'
+            ORDER BY table_name
+        """).fetchall()
 
     if on_log:
         on_log(f"Tabeller i mart-schemat: {[t[0] for t in tables]}")
@@ -412,32 +422,39 @@ def export_mart_tables(
                 on_log("  → Kontrollera att transform-stegen körts och att data finns i staging_2")
             continue
 
-        # Hämta kolumner
+        # Hämta kolumner med typer
         columns = conn.execute(f"""
-            SELECT column_name FROM information_schema.columns
+            SELECT column_name, data_type FROM information_schema.columns
             WHERE table_schema = 'mart' AND table_name = '{table_name}'
         """).fetchall()
         col_names = [c[0] for c in columns]
+        col_types = {c[0]: c[1] for c in columns}
 
         # Kolla om tabellen har H3-data
         has_h3 = any(col in col_names for col in ("h3_cell", "h3_center", "h3_cells"))
         has_geom = geom_count > 0 or "h3_cell" in col_names  # h3_cell kan konverteras till geometri
 
-        # Bygg SELECT - exkludera geometrikolumner
+        # Bygg SELECT - exkludera geometrikolumner och hantera array-typer
         select_cols = []
         for col in col_names:
-            if col.lower() not in ("geom", "geometry"):
+            if col.lower() in ("geom", "geometry"):
+                continue
+            # Array-typer (t.ex. DOUBLE[]) stöds inte av GeoPackage - konvertera till JSON
+            if col_types[col].endswith("[]"):
+                select_cols.append(f"CAST({col} AS VARCHAR) as {col}")
+            else:
                 select_cols.append(col)
 
         # Bestäm exportformat och lägg till geometri om det behövs
         if has_geom:
             # Tabell med geometri -> exportera till valt geoformat
-            if "h3_cell" in col_names:
-                select_cols.append("ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geometry")
-            elif "geom" in col_names:
+            # Prioritera faktisk geom-kolumn över h3_cell (som bara ger hexagon-boundaries)
+            if "geom" in col_names:
                 select_cols.append("geom as geometry")
             elif "geometry" in col_names:
                 select_cols.append("geometry")
+            elif "h3_cell" in col_names:
+                select_cols.append("ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)) as geometry")
 
             output_path = output_dir / f"{table_name}{ext}"
             output_path_str = str(output_path).replace("\\", "/")
@@ -448,9 +465,10 @@ def export_mart_tables(
 
             try:
                 if driver:
+                    # Sätt SWEREF99 TM (EPSG:3006) som koordinatsystem för svenska geodata
                     sql = f"""
                         COPY (SELECT {select_sql} FROM {source_table})
-                        TO '{output_path_str}' (FORMAT GDAL, DRIVER '{driver}')
+                        TO '{output_path_str}' (FORMAT GDAL, DRIVER '{driver}', SRS 'EPSG:3006')
                     """
                 else:
                     sql = f"""

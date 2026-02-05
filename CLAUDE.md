@@ -47,6 +47,9 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 - `task admin:run` - Starta admin TUI
 - `task admin:mock` - Starta med mockdata (för test)
 - `task admin:docker` - Starta admin TUI i Docker
+- `task admin:huey` - Starta Huey (DuckDB data explorer) i Docker
+- `task admin:huey:stop` - Stoppa Huey
+- `task admin:huey:rebuild` - Bygg om Huey-imagen
 
 **Docker:**
 - `task docker:up` - Starta containers
@@ -58,6 +61,12 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 - `task release:new -- v0.1.3` - Skapa GitHub Release (triggar Nuitka-bygge)
 - `task release:trigger -- v0.1.2` - Trigga bygge för befintlig tag
 - `task release:delete -- v0.1.2` - Ta bort release och tag
+
+**QGIS Plugin:**
+
+- `task qgis:build` - Bygg plugin-zip för distribution
+- `task qgis:install` - Installera plugin direkt till QGIS (för utveckling)
+- `task qgis:check` - Kontrollera plugin-installation
 
 ## Architecture
 
@@ -222,12 +231,34 @@ field_mapping:
   leverantor: sks
 ```
 
+**SQL-makron (003_db_makros.sql):**
+
+Återanvändbara makron med prefix `g_` för att särskilja från standard SQL:
+
+| Makro                                  | Beskrivning                              |
+| -------------------------------------- | ---------------------------------------- |
+| `g_to_wgs84(geom)`                     | Transformera från SWEREF99 TM till WGS84 |
+| `g_validate_geom(geom)`                | Validera/reparera geometri               |
+| `g_centroid_lat/lng(geom)`             | Hämta centroid-koordinater i WGS84       |
+| `g_h3_center(geom, res)`               | H3-cell för centroid                     |
+| `g_h3_polygon_cells(geom, res)`        | H3-celler för polygon (polyfill)         |
+| `g_h3_line_cells(geom, buffer, res)`   | H3-celler för linje (med buffer)         |
+| `g_h3_cell_to_geom(h3_cell)`           | Konvertera H3-cell till SWEREF99-polygon |
+
 ## Plugins
 
 Nya datakällor läggs till som plugins i `src/g_etl/plugins/`. Varje plugin:
 1. Ärver från `SourcePlugin` i `g_etl.plugins.base`
 2. Implementerar `extract(config, conn, on_log)` metoden
 3. Registreras i `g_etl/plugins/__init__.py`
+
+**Trådsäker URL-hantering:**
+
+Plugins som laddar ner filer (t.ex. `zip_geopackage`) hanterar parallella nedladdningar trådsäkert:
+
+- Samma URL laddas bara ner en gång (med `threading.Lock()` per URL)
+- Varje dataset extraherar till sin egen katalog för att undvika race conditions
+- Cache rensas automatiskt efter körning
 
 ## QGIS Plugin
 
@@ -259,6 +290,26 @@ qgis_plugin/
 
 Vid release byggs pluginet automatiskt och laddas upp till GitHub Releases.
 Version synkas automatiskt med release-taggen.
+
+## Huey (DuckDB Data Explorer)
+
+Huey är en webbbaserad DuckDB-utforskare som körs i Docker för att enkelt inspektera data.
+
+**Starta:**
+
+```bash
+task admin:huey
+```
+
+Öppnar på <http://localhost:8080>. Dra-och-släpp filer för att utforska:
+
+- `/data/warehouse.duckdb` - Hela datalagret
+- `/data/output/*.parquet` - Exporterade Parquet-filer
+
+**Docker-setup:**
+
+- [docker/huey/Dockerfile](docker/huey/Dockerfile) - Minimal nginx:alpine med Huey från GitHub
+- Data-katalogen monteras som `/data` (read-only)
 
 ## Working Guidelines
 

@@ -9,6 +9,7 @@ import duckdb
 import requests
 
 from g_etl.plugins.base import ExtractResult, SourcePlugin
+from g_etl.utils.downloader import download_file_streaming, is_url
 
 # Module-level cache for downloaded files
 # Cache: URL -> local_path
@@ -23,11 +24,6 @@ def _get_url_lock(url: str) -> threading.Lock:
         if url not in _url_locks:
             _url_locks[url] = threading.Lock()
         return _url_locks[url]
-
-
-def _is_url(source: str) -> bool:
-    """Check if source is a URL or local path."""
-    return source.startswith(("http://", "https://"))
 
 
 def clear_download_cache() -> None:
@@ -75,7 +71,7 @@ class GeoPackagePlugin(SourcePlugin):
                 message="Missing url in config",
             )
 
-        is_remote = _is_url(url)
+        is_remote = is_url(url)
 
         try:
             if is_remote:
@@ -193,57 +189,17 @@ class GeoPackagePlugin(SourcePlugin):
                     self._progress(0.6, "Using cached file...", on_progress)
                     return cached_path
 
-            # Download
-            local_path = self._download_file(url, on_log, on_progress)
+            # Download med centraliserad downloader
+            local_path = download_file_streaming(
+                url=url,
+                suffix=".gpkg",
+                timeout=600,
+                on_log=on_log,
+                on_progress=on_progress,
+                progress_weight=0.5,
+            )
             _download_cache[url] = str(local_path)
             return local_path
-
-    def _download_file(
-        self,
-        url: str,
-        on_log: Callable[[str], None] | None = None,
-        on_progress: Callable[[float, str], None] | None = None,
-    ) -> Path:
-        """Download file from URL to temporary location.
-
-        Returns:
-            Path to the downloaded file.
-        """
-        self._log(f"Downloading {url}...", on_log)
-        self._progress(0.0, "Connecting...", on_progress)
-
-        response = requests.get(url, timeout=600, stream=True)
-        response.raise_for_status()
-
-        total_size = int(response.headers.get("content-length", 0))
-        downloaded = 0
-
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False) as tmp:
-            for chunk in response.iter_content(chunk_size=8192):
-                tmp.write(chunk)
-                downloaded += len(chunk)
-
-                # Report every ~800KB
-                if total_size > 0 and downloaded % (8192 * 100) < 8192:
-                    dl_fraction = downloaded / total_size
-                    dl_progress = dl_fraction * 0.5
-                    mb_done = downloaded / (1024 * 1024)
-                    mb_total = total_size / (1024 * 1024)
-                    self._progress(
-                        dl_progress,
-                        f"Downloading {mb_done:.1f}/{mb_total:.1f} MB...",
-                        on_progress,
-                    )
-                elif total_size == 0 and downloaded % (8192 * 100) < 8192:
-                    mb_done = downloaded / (1024 * 1024)
-                    self._progress(
-                        0.25,
-                        f"Downloading {mb_done:.1f} MB...",
-                        on_progress,
-                    )
-
-            return Path(tmp.name)
 
     def _read_with_geopandas(
         self,

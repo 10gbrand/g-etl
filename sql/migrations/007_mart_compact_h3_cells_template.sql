@@ -6,7 +6,7 @@
 
 -- migrate:up
 
-CREATE OR REPLACE TABLE {{ schema }}.compact_{{ dataset_id }} AS
+CREATE OR REPLACE TABLE {{ schema }}.{{ dataset_id }}_h3_compact AS
 SELECT
     * EXCLUDE (h3_cells, centerpoint),
     -- Konvertera JSON-sträng till array, kompaktera, konvertera tillbaka till JSON

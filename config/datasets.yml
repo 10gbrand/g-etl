@@ -18,6 +18,7 @@
 # Syntax:
 #   $kolumnnamn = kolumnreferens (hämtar värde från kolumn i data)
 #   värde       = literal sträng
+#   (tom)       = fältet ignoreras
 
 datasets:
   # ============================================================================
@@ -34,6 +35,8 @@ datasets:
     field_mapping:
       source_id_column: $beteckn
       klass: avverkningsanmalan
+      grupp:
+      typ:
       leverantor: sks
 
   - id: sksbiotopskydd
@@ -58,7 +61,10 @@ datasets:
     url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
     enabled: false
     field_mapping:
+      source_id_column:
       klass: dodagranar
+      grupp:
+      typ:
       leverantor: sks
 
   - id: naturvardsavtal_sks
@@ -71,6 +77,8 @@ datasets:
     field_mapping:
       source_id_column: $beteckn
       klass: naturvardsavtal
+      grupp:
+      typ:
       leverantor: sks
 
   - id: biotopskydd_sks
@@ -83,6 +91,8 @@ datasets:
     field_mapping:
       source_id_column: $uuid
       klass: biotopskydd
+      grupp: $Biotyp
+      typ: $Naturtyp
       leverantor: sks
 
   - id: nyckelbiotoper
@@ -95,6 +105,8 @@ datasets:
     field_mapping:
       source_id_column: $beteckn
       klass: nyckelbiotop
+      grupp: $Biotop1
+      typ: $Biotop2
       leverantor: sks
 
   - id: stornyckelbiotoper
@@ -107,6 +119,8 @@ datasets:
     field_mapping:
       source_id_column: $objectid
       klass: nyckelbiotop
+      grupp:
+      typ:
       leverantor: sks
 
   - id: sumpskogar
@@ -119,6 +133,8 @@ datasets:
     field_mapping:
       source_id_column: $kartid2
       klass: sumpskog
+      grupp:
+      typ:
       leverantor: sks
 
   # Inaktiverade SKS-dataset (källa finns ej)
@@ -131,7 +147,10 @@ datasets:
     enabled: false
     status: källan finns ej
     field_mapping:
+      source_id_column:
       klass: utford_avverkning
+      grupp:
+      typ:
       leverantor: sks
 
   - id: skog_med_hoga_naturvarden
@@ -143,7 +162,10 @@ datasets:
     enabled: false
     status: källan finns ej
     field_mapping:
+      source_id_column:
       klass: smhn
+      grupp:
+      typ:
       leverantor: sks
 
   - id: frotaktsomraden
@@ -155,7 +177,10 @@ datasets:
     enabled: false
     status: källan finns ej
     field_mapping:
+      source_id_column:
       klass: frotaktsomrade
+      grupp:
+      typ:
       leverantor: sks
 
   - id: skog_o_historia_yta
@@ -169,6 +194,8 @@ datasets:
     field_mapping:
       source_id_column: $Objektnr
       klass: skogshistorisk_yta
+      grupp:
+      typ:
       leverantor: sks
 
   - id: skog_o_historia_pkt
@@ -182,6 +209,8 @@ datasets:
     field_mapping:
       source_id_column: $Objektnr
       klass: skogshistorisk_punkt
+      grupp:
+      typ:
       leverantor: sks
 
   - id: skog_o_historia_linje
@@ -195,6 +224,8 @@ datasets:
     field_mapping:
       source_id_column: $Objektnr
       klass: skogshistorisk_linje
+      grupp:
+      typ:
       leverantor: sks
 
   - id: fornlamning
@@ -207,6 +238,8 @@ datasets:
     field_mapping:
       source_id_column: $Objektnr
       klass: fornlamning
+      grupp:
+      typ:
       leverantor: raa
 
   # ============================================================================
@@ -223,6 +256,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: nationalpark
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: naturreservat
@@ -235,6 +270,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: naturreservat
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: natura2000_sci_ac
@@ -248,6 +285,8 @@ datasets:
     field_mapping:
       source_id_column: $SITE_CODE
       klass: natura2000_sci
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: natura2000_sci_alvar_bd
@@ -261,6 +300,8 @@ datasets:
     field_mapping:
       source_id_column: $SITE_CODE
       klass: natura2000_sci
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: natura2000_sci_ej_alvar_rikstackande
@@ -274,6 +315,8 @@ datasets:
     field_mapping:
       source_id_column: $SITE_CODE
       klass: natura2000_sci
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: natura2000_spa
@@ -286,6 +329,8 @@ datasets:
     field_mapping:
       source_id_column: $SITE_CODE
       klass: natura2000_spa
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: naturvardsavtal
@@ -298,6 +343,8 @@ datasets:
     field_mapping:
       source_id_column: $geodb_oid
       klass: naturvardsavtal
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: biotopskydd
@@ -310,6 +357,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: biotopskydd
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: vso
@@ -322,6 +371,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: vso
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: Naturvardsomrade
@@ -334,6 +385,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: naturvardsomrade
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: kulturreservat
@@ -346,6 +399,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: kulturreservat
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: naturminnen_punkt
@@ -359,6 +414,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: naturminne
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: naturminnen_ytor
@@ -372,6 +429,8 @@ datasets:
     field_mapping:
       source_id_column: $NVRID
       klass: naturminne
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: ramsar_vatmarker
@@ -384,6 +443,8 @@ datasets:
     field_mapping:
       source_id_column: $RAMSAR_ID
       klass: ramsar
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: skyddsvarda_statliga_skogar
@@ -396,6 +457,8 @@ datasets:
     field_mapping:
       source_id_column: $ID
       klass: skyddsvard_statlig_skog
+      grupp:
+      typ:
       leverantor: nvv
 
   - id: skogliga_vardekarnor
@@ -408,6 +471,8 @@ datasets:
     field_mapping:
       source_id_column: $OBJECTID
       klass: vardekarna
+      grupp:
+      typ:
       leverantor: nvv
 
   # ============================================================================
@@ -424,6 +489,8 @@ datasets:
     field_mapping:
       source_id_column: $fid
       klass: jordart
+      grupp:
+      typ:
       leverantor: sgu
 
   - id: torvlagerfoljder
@@ -436,6 +503,8 @@ datasets:
     field_mapping:
       source_id_column: $id
       klass: torvlagerfoljd
+      grupp:
+      typ:
       leverantor: sgu
 
   # ============================================================================
@@ -443,14 +512,18 @@ datasets:
   # ============================================================================
 
   - id: Vardefullavatten
-    name: Vardefullavatten
-    description: Vardefullavatten, kod 111 i GISS
-    typ: hav_gpkg
+    name: Värdefulla vatten - Levande sjöar och vattendrag
+    description: Levande sjöar och vattendrag från Havs- och vattenmyndigheten
+    typ: hav_wfs
     plugin: wfs
     url: http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows
+    layer: vardefulla-vatten:levande-sjoar-vattendrag
     enabled: true
     field_mapping:
+      source_id_column:
       klass: vardefullavatten
+      grupp:
+      typ:
       leverantor: hav
 
   - id: Forsok
@@ -461,7 +534,10 @@ datasets:
     url: https://wms.slu.se/silvaboreal/esf/ows
     enabled: false
     field_mapping:
+      source_id_column:
       klass: forsok
+      grupp:
+      typ:
       leverantor: slu
 
   - id: dikningsforetagskartan
@@ -473,7 +549,10 @@ datasets:
     enabled: false
     status: källan finns ej
     field_mapping:
+      source_id_column:
       klass: dikningsforetag
+      grupp:
+      typ:
       leverantor: nvv
 
   # ============================================================================
@@ -489,5 +568,8 @@ datasets:
     layer: GAVD
     enabled: false
     field_mapping:
+      source_id_column:
       klass: klass
+      grupp:
+      typ:
       leverantor: intern

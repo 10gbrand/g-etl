@@ -18,3 +18,47 @@ tasks:
       - mkdir -p dist/nuitka
       - docker run --rm -v {{.USER_WORKING_DIR}}/dist/nuitka:/output g-etl-nuitka cp /app/g_etl /output/g_etl
       - 'echo "Binary created: dist/nuitka/g_etl"'
+
+  huey:
+    desc: Starta Huey (DuckDB data explorer) i Docker
+    cmds:
+      - |
+        echo "=== Startar Huey ==="
+
+        # Bygg image om den inte finns
+        if ! docker image inspect g-etl-huey >/dev/null 2>&1; then
+          echo "Bygger Huey Docker image..."
+          docker build -t g-etl-huey docker/huey
+        fi
+
+        # Stoppa befintlig container om den finns
+        docker rm -f g-etl-huey 2>/dev/null || true
+
+        # Starta container med data-katalogen monterad
+        docker run -d --name g-etl-huey \
+          -p 8080:80 \
+          -v "{{.USER_WORKING_DIR}}/data:/data:ro" \
+          g-etl-huey
+
+        echo ""
+        echo "Huey körs på: http://localhost:8080"
+        echo ""
+        echo "Dra-och-släpp filer från /data i Huey:"
+        echo "  - /data/warehouse.duckdb"
+        echo "  - /data/output/*.parquet"
+        echo ""
+        echo "Stoppa med: docker stop g-etl-huey"
+
+  huey:stop:
+    desc: Stoppa Huey Docker container
+    cmds:
+      - docker stop g-etl-huey 2>/dev/null || echo "Huey körs inte"
+      - docker rm g-etl-huey 2>/dev/null || true
+
+  huey:rebuild:
+    desc: Bygg om Huey Docker image
+    cmds:
+      - docker rm -f g-etl-huey 2>/dev/null || true
+      - docker rmi g-etl-huey 2>/dev/null || true
+      - docker build -t g-etl-huey docker/huey
+      - echo "Huey image ombyggd. Kör 'task admin:huey' för att starta."

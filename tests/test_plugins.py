@@ -218,12 +218,12 @@ class TestZipGeoPackagePlugin:
 
     def test_is_url_function(self):
         """Testa URL-detektering."""
-        from g_etl.plugins.zip_geopackage import _is_url
+        from g_etl.utils.downloader import is_url
 
-        assert _is_url("https://example.com/file.zip") is True
-        assert _is_url("http://example.com/file.zip") is True
-        assert _is_url("/path/to/local/file.zip") is False
-        assert _is_url("relative/path.zip") is False
+        assert is_url("https://example.com/file.zip") is True
+        assert is_url("http://example.com/file.zip") is True
+        assert is_url("/path/to/local/file.zip") is False
+        assert is_url("relative/path.zip") is False
 
     def test_get_url_lock(self):
         """Testa URL-lås."""

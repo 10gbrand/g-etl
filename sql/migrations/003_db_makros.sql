@@ -82,6 +82,15 @@ CREATE OR REPLACE MACRO g_h3_point_cells(geom, resolution) AS
         resolution
     )])::VARCHAR;
 
+-- H3-cell till geometri (SWEREF99 TM)
+-- Konverterar en H3-cell sträng till polygon i SWEREF99
+CREATE OR REPLACE MACRO g_h3_cell_to_geom(h3_cell) AS
+    ST_Transform(
+        ST_GeomFromText(h3_cell_to_boundary_wkt(h3_cell)),
+        g_proj4_wgs84(),
+        g_proj4_sweref99()
+    );
+
 -- =============================================================================
 -- Data-makron
 -- =============================================================================
