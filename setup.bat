@@ -40,12 +40,7 @@ REM Ladda ner SQL-filer dynamiskt via GitHub API
 echo Laddar ner SQL-templates...
 
 REM Anvand PowerShell for att parsa JSON och ladda ner filer
-powershell -Command ^
-    "$files = (Invoke-RestMethod -Uri '%API_URL%/sql/migrations?ref=%BRANCH%') | Where-Object { $_.name -like '*.sql' }; ^
-    foreach ($file in $files) { ^
-        Write-Host ('  - ' + $file.name); ^
-        Invoke-WebRequest -Uri $file.download_url -OutFile ('sql\migrations\' + $file.name) ^
-    }"
+powershell -Command "(Invoke-RestMethod -Uri '%API_URL%/sql/migrations?ref=%BRANCH%') | Where-Object { $_.name -like '*.sql' } | ForEach-Object { Write-Host ('  - ' + $_.name); Invoke-WebRequest -Uri $_.download_url -OutFile ('sql\migrations\' + $_.name) }"
 
 if errorlevel 1 (
     echo Fel: Kunde inte ladda ner SQL-filer
