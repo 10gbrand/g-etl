@@ -34,6 +34,13 @@ Detta skapar följande struktur lokalt:
 ./sql/migrations/       # SQL-templates (kan anpassas)
 ./input_data/           # Lokala geodatafiler (GeoPackage, Shapefile, etc.)
 ./data/                 # Resultat sparas här
+./docker/huey/          # Huey DuckDB data explorer
+```
+
+Analysera resultat med Huey (webbbaserad DuckDB-utforskare):
+```bash
+docker compose up huey
+# Öppna http://localhost:8080 och dra in /data/warehouse.duckdb
 ```
 
 ### TUI (lokal installation)

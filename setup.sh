@@ -14,7 +14,7 @@ echo ""
 
 # Skapa mappar
 echo "Skapar mappar..."
-mkdir -p config sql/migrations data input_data
+mkdir -p config sql/migrations data input_data docker/huey
 
 # Ladda ner docker-compose.yml
 echo "Laddar ner docker-compose.yml..."
@@ -33,6 +33,10 @@ for file in $SQL_FILES; do
     curl -sL "${BASE_URL}/sql/migrations/${file}" -o "sql/migrations/${file}"
 done
 
+# Ladda ner Huey Dockerfile (DuckDB data explorer)
+echo "Laddar ner Huey Dockerfile..."
+curl -sL "${BASE_URL}/docker/huey/Dockerfile" -o docker/huey/Dockerfile
+
 echo ""
 echo "=== Setup klar! ==="
 echo ""
@@ -44,4 +48,8 @@ echo "  data/                - Resultat sparas här"
 echo ""
 echo "Starta med:"
 echo "  docker compose run --rm admin"
+echo ""
+echo "Analysera resultat med Huey (DuckDB data explorer):"
+echo "  docker compose up huey"
+echo "  Öppna http://localhost:8080"
 echo ""

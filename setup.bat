@@ -18,6 +18,7 @@ if not exist config mkdir config
 if not exist sql\migrations mkdir sql\migrations
 if not exist data mkdir data
 if not exist input_data mkdir input_data
+if not exist docker\huey mkdir docker\huey
 
 REM Ladda ner docker-compose.yml
 echo Laddar ner docker-compose.yml...
@@ -51,6 +52,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Ladda ner Huey Dockerfile (DuckDB data explorer)
+echo Laddar ner Huey Dockerfile...
+curl -sL "%BASE_URL%/docker/huey/Dockerfile" -o docker\huey\Dockerfile
+if errorlevel 1 (
+    echo Fel: Kunde inte ladda ner Huey Dockerfile
+    exit /b 1
+)
+
 echo.
 echo === Setup klar! ===
 echo.
@@ -62,4 +71,8 @@ echo   data\                - Resultat sparas har
 echo.
 echo Starta med:
 echo   docker compose run --rm admin
+echo.
+echo Analysera resultat med Huey (DuckDB data explorer):
+echo   docker compose up huey
+echo   Oppna http://localhost:8080
 echo.

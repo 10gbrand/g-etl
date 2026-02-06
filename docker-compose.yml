@@ -1,9 +1,8 @@
 # G-ETL Docker Compose
 #
-# Kör med: docker compose up -d
-# Stoppa:  docker compose down
-#
-# För interaktiv TUI: docker compose run --rm admin
+# Kör TUI:    docker compose run --rm admin
+# Starta Huey: docker compose up huey
+# Stoppa:      docker compose down
 
 services:
   admin:
@@ -24,3 +23,10 @@ services:
     # Krävs för TUI
     tty: true
     stdin_open: true
+
+  huey:
+    build: docker/huey
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data:/data:ro
