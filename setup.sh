@@ -7,6 +7,7 @@ set -e
 REPO="10gbrand/g-etl"
 BRANCH="main"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+API_URL="https://api.github.com/repos/${REPO}/contents"
 
 echo "=== G-ETL Setup ==="
 echo ""
@@ -23,17 +24,12 @@ curl -sL "${BASE_URL}/docker-compose.yml" -o docker-compose.yml
 echo "Laddar ner config..."
 curl -sL "${BASE_URL}/config/datasets.yml" -o config/datasets.yml
 
-# Ladda ner SQL-filer
+# Ladda ner SQL-filer dynamiskt via GitHub API
 echo "Laddar ner SQL-templates..."
-for file in \
-    001_db_extensions.sql \
-    002_db_schemas.sql \
-    003_db_makros.sql \
-    004_staging_transform_template.sql \
-    005_staging2_normalisering_template.sql \
-    006_mart_h3_cells_template.sql \
-    007_mart_compact_h3_cells_template.sql
-do
+SQL_FILES=$(curl -sL "${API_URL}/sql/migrations?ref=${BRANCH}" | grep '"name":' | sed 's/.*"name": "\([^"]*\)".*/\1/' | grep '\.sql$')
+
+for file in $SQL_FILES; do
+    echo "  - ${file}"
     curl -sL "${BASE_URL}/sql/migrations/${file}" -o "sql/migrations/${file}"
 done
 

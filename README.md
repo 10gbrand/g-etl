@@ -9,9 +9,20 @@ En ETL-stack för svenska geodata med DuckDB som analytisk motor, H3 spatial ind
 
 ### Docker (enklast)
 
+**Linux/macOS:**
 ```bash
 # Ladda ner setup-script och kör
 curl -sL https://raw.githubusercontent.com/10gbrand/g-etl/main/setup.sh | bash
+
+# Starta TUI
+docker compose run --rm admin
+```
+
+**Windows (PowerShell):**
+```powershell
+# Ladda ner setup-script och kör
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/10gbrand/g-etl/main/setup.bat" -OutFile "setup.bat"
+.\setup.bat
 
 # Starta TUI
 docker compose run --rm admin
