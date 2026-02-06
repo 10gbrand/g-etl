@@ -116,6 +116,7 @@ tar -xzf g_etl-*.tar.gz
 | [docs/development.md](docs/development.md) | Lägga till dataset och plugins, SQL-generator, makron |
 | [config/readme.md](config/readme.md) | Dataset-konfiguration och field_mapping |
 | [config/datasets.md](config/datasets.md) | Lista över alla dataset |
+| [docker/readme.md](docker/readme.md) | Docker-images, compose-filer, Huey |
 | [qgis_plugin/README.md](qgis_plugin/README.md) | QGIS Plugin-dokumentation |
 
 ## Dataset
