@@ -24,29 +24,24 @@ tasks:
         echo "Kopierar plugin-filer..."
         cp -r qgis_plugin/* "$PLUGIN_DIR/"
 
-        # Kopiera core-moduler till runner/core/
+        # Kopiera core-moduler till runner/g_etl/
+        # qgis_runner.py lägger runner/ i sys.path → Python hittar paketet g_etl här
         echo "Kopierar core-moduler..."
-        mkdir -p "$PLUGIN_DIR/runner/core"
-        cp -r src/g_etl/* "$PLUGIN_DIR/runner/core/"
-        touch "$PLUGIN_DIR/runner/__init__.py"
+        mkdir -p "$PLUGIN_DIR/runner/g_etl"
+        cp -r src/g_etl/* "$PLUGIN_DIR/runner/g_etl/"
+        echo '"""G-ETL runner."""' > "$PLUGIN_DIR/runner/__init__.py"
 
         # Lägg till 'from __future__ import annotations' för Python 3.9-kompatibilitet
         # Detta gör att type hints som 'str | None' evalueras som strängar
         echo "Lägger till __future__ annotations..."
-        for f in $(find "$PLUGIN_DIR/runner/core" -name "*.py"); do
+        for f in $(find "$PLUGIN_DIR/runner/g_etl" -name "*.py"); do
           if ! grep -q "from __future__ import annotations" "$f"; then
-            # Skapa temp-fil med import först, sedan originalet
             echo "from __future__ import annotations" > "$f.tmp"
             echo "" >> "$f.tmp"
             cat "$f" >> "$f.tmp"
             mv "$f.tmp" "$f"
           fi
         done
-
-        # Transformera importer i core-filer (g_etl. -> g_etl.runner.core.)
-        echo "Transformerar importer..."
-        find "$PLUGIN_DIR/runner/core" -name "*.py" -exec perl -i -pe 's/from g_etl\./from g_etl.runner.core./g' {} \;
-        find "$PLUGIN_DIR/runner/core" -name "*.py" -exec perl -i -pe 's/import g_etl\./import g_etl.runner.core./g' {} \;
 
         # Kopiera config och sql
         echo "Kopierar config och sql..."
@@ -124,15 +119,16 @@ tasks:
         echo "Kopierar plugin-filer..."
         cp -r qgis_plugin/* "$PLUGIN_DEST/"
 
-        # Kopiera core-moduler till runner/core/
+        # Kopiera core-moduler till runner/g_etl/
+        # qgis_runner.py lägger runner/ i sys.path → Python hittar paketet g_etl här
         echo "Kopierar core-moduler..."
-        mkdir -p "$PLUGIN_DEST/runner/core"
-        cp -r src/g_etl/* "$PLUGIN_DEST/runner/core/"
-        touch "$PLUGIN_DEST/runner/__init__.py"
+        mkdir -p "$PLUGIN_DEST/runner/g_etl"
+        cp -r src/g_etl/* "$PLUGIN_DEST/runner/g_etl/"
+        echo '"""G-ETL runner."""' > "$PLUGIN_DEST/runner/__init__.py"
 
         # Lägg till 'from __future__ import annotations' för Python 3.9-kompatibilitet
         echo "Lägger till __future__ annotations..."
-        find "$PLUGIN_DEST/runner/core" -name "*.py" -exec sh -c '
+        find "$PLUGIN_DEST/runner/g_etl" -name "*.py" -exec sh -c '
           for f; do
             if ! grep -q "from __future__ import annotations" "$f"; then
               { echo "from __future__ import annotations"; echo ""; cat "$f"; } > "$f.tmp"
@@ -140,11 +136,6 @@ tasks:
             fi
           done
         ' _ {} +
-
-        # Transformera importer i core-filer
-        echo "Transformerar importer..."
-        find "$PLUGIN_DEST/runner/core" -name "*.py" -exec perl -i -pe 's/from g_etl\./from g_etl.runner.core./g' {} +
-        find "$PLUGIN_DEST/runner/core" -name "*.py" -exec perl -i -pe 's/import g_etl\./import g_etl.runner.core./g' {} +
 
         # Kopiera config och sql
         echo "Kopierar config och sql..."

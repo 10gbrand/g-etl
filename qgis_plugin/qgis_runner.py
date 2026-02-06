@@ -14,19 +14,33 @@ core_imported = False
 
 
 def _ensure_core_imports():
-    """Importera core-moduler (lazy loading efter dependency-check)."""
+    """Importera core-moduler (lazy loading efter dependency-check).
+
+    Lägger runner/ i sys.path så att bundlade moduler i runner/g_etl/
+    hittas som paketet 'g_etl'. Alla interna imports (from g_etl.xxx)
+    fungerar då utan ändringar.
+    """
     global core_imported
     if core_imported:
         return
+
+    import sys
+
+    runner_path = str(Path(__file__).parent / "runner")
+    if runner_path not in sys.path:
+        sys.path.insert(0, runner_path)
 
     global PipelineRunner, PipelineEvent, settings, yaml, export_mart_tables, FileLogger
 
     import yaml as _yaml
 
-    from .runner.core.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
-    from .runner.core.export import export_mart_tables
-    from .runner.core.settings import settings
-    from .runner.core.utils.logging import FileLogger
+    from g_etl.admin.services.pipeline_runner import (
+        PipelineEvent,
+        PipelineRunner,
+    )
+    from g_etl.export import export_mart_tables
+    from g_etl.settings import settings
+    from g_etl.utils.logging import FileLogger
 
     yaml = _yaml
     core_imported = True

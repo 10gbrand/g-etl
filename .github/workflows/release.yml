@@ -241,8 +241,10 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           echo "Building QGIS plugin version: $VERSION"
 
-          # Skapa plugin-struktur (runner/core/ för att matcha qgis_runner.py imports)
-          mkdir -p g_etl_qgis/runner/core
+          # Skapa plugin-struktur
+          # runner/g_etl/ gör att sys.path-tricket i qgis_runner.py fungerar:
+          # alla interna "from g_etl.xxx" imports hittar paketet här
+          mkdir -p g_etl_qgis/runner/g_etl
 
           # Kopiera QGIS-specifik plugin-kod
           cp qgis_plugin/__init__.py g_etl_qgis/
@@ -253,16 +255,17 @@ jobs:
           cp qgis_plugin/qgis_runner.py g_etl_qgis/
 
           # Kopiera core-moduler (utan TUI-specifik kod)
-          cp -r src/g_etl/admin g_etl_qgis/runner/core/
-          cp -r src/g_etl/plugins g_etl_qgis/runner/core/
-          cp -r src/g_etl/migrations g_etl_qgis/runner/core/
-          cp src/g_etl/settings.py g_etl_qgis/runner/core/
-          cp src/g_etl/sql_generator.py g_etl_qgis/runner/core/
-          cp src/g_etl/export.py g_etl_qgis/runner/core/
+          cp src/g_etl/__init__.py g_etl_qgis/runner/g_etl/
+          cp -r src/g_etl/admin g_etl_qgis/runner/g_etl/
+          cp -r src/g_etl/plugins g_etl_qgis/runner/g_etl/
+          cp -r src/g_etl/migrations g_etl_qgis/runner/g_etl/
+          cp -r src/g_etl/utils g_etl_qgis/runner/g_etl/
+          cp src/g_etl/settings.py g_etl_qgis/runner/g_etl/
+          cp src/g_etl/sql_generator.py g_etl_qgis/runner/g_etl/
+          cp src/g_etl/export.py g_etl_qgis/runner/g_etl/
 
-          # Skapa __init__.py-filer
+          # Skapa __init__.py för runner-paketet
           echo '"""G-ETL runner."""' > g_etl_qgis/runner/__init__.py
-          echo '"""G-ETL core modules."""' > g_etl_qgis/runner/core/__init__.py
 
           # Kopiera config och SQL
           cp -r config g_etl_qgis/

@@ -75,36 +75,41 @@ class TestPluginImportStructure:
         for py_file in plugin_files:
             content = py_file.read_text()
 
-            # Kolla efter absoluta importer som borde vara relativa
-            if "from g_etl." in content and "from g_etl.runner.core" not in content:
-                # Detta är OK om det är i qgis_runner.py som importerar core
-                if py_file.name != "qgis_runner.py":
-                    rel_path = py_file.relative_to(project_root)
-                    issues.append(f"{rel_path}: använder 'from g_etl.' istället för relativ import")
+            # qgis_runner.py använder 'from g_etl.' via sys.path-trick - det är OK
+            if py_file.name == "qgis_runner.py":
+                continue
+
+            if "from g_etl." in content:
+                rel_path = py_file.relative_to(project_root)
+                issues.append(f"{rel_path}: använder 'from g_etl.' istället för relativ import")
 
         assert not issues, "Plugin-filer med felaktiga importer:\n" + "\n".join(issues)
 
-    def test_qgis_runner_imports_from_runner_core(self, project_root: Path):
-        """Verifiera att qgis_runner.py importerar från .runner.core."""
+    def test_qgis_runner_uses_sys_path_for_core(self, project_root: Path):
+        """Verifiera att qgis_runner.py lägger runner/ i sys.path.
+
+        Med runner/g_etl/ i sys.path fungerar alla interna 'from g_etl.xxx'
+        imports i de bundlade core-modulerna utan import-transformering.
+        """
         qgis_runner = project_root / "qgis_plugin" / "qgis_runner.py"
         content = qgis_runner.read_text()
 
-        # Ska använda .runner.core för core-importer
-        assert ".runner.core." in content, (
-            "qgis_runner.py ska importera från .runner.core för att matcha plugin-strukturen"
+        # Ska lägga runner/ i sys.path
+        assert "sys.path" in content, (
+            "qgis_runner.py ska lägga runner/ i sys.path"
+        )
+        # Ska importera från g_etl (via sys.path, inte relativ .runner.core)
+        assert "from g_etl." in content, (
+            "qgis_runner.py ska importera från g_etl via sys.path"
         )
 
-    def test_build_task_transforms_imports(self, project_root: Path):
-        """Verifiera att build-tasken innehåller import-transformering."""
+    def test_build_task_uses_runner_g_etl(self, project_root: Path):
+        """Verifiera att build-tasken kopierar till runner/g_etl/."""
         qgis_yml = project_root / "taskfiles" / "qgis.yml"
         content = qgis_yml.read_text()
 
-        # Kontrollera att transformeringen finns
-        assert "g_etl.runner.core" in content, (
-            "Build-tasken ska transformera importer till g_etl.runner.core"
-        )
-        assert "perl -i -pe" in content or "sed -i" in content, (
-            "Build-tasken ska använda perl eller sed för import-transformering"
+        assert "runner/g_etl" in content, (
+            "Build-tasken ska kopiera core-moduler till runner/g_etl/"
         )
 
 
@@ -116,51 +121,55 @@ class TestPluginBuildIntegration:
         """Hämta projektets rotkatalog."""
         return Path(__file__).parent.parent.parent
 
-    def test_simulated_build_transforms_imports(self, project_root: Path):
-        """Simulera bygget och verifiera att importer transformeras korrekt."""
+    def test_simulated_build_has_correct_structure(self, project_root: Path):
+        """Simulera bygget och verifiera att runner/g_etl/ innehåller alla moduler.
+
+        Med det nya bygget kopieras moduler till runner/g_etl/ utan
+        import-transformering. Alla 'from g_etl.xxx' imports fungerar
+        via sys.path-tricket i qgis_runner.py.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             plugin_dir = temp_path / "g_etl"
             plugin_dir.mkdir()
 
-            # Kopiera core-filer
-            core_dir = plugin_dir / "runner" / "core"
-            core_dir.mkdir(parents=True)
+            # Kopiera core-filer till runner/g_etl/ (som det nya bygget gör)
+            g_etl_dir = plugin_dir / "runner" / "g_etl"
+            g_etl_dir.mkdir(parents=True)
 
             src_core = project_root / "src" / "g_etl"
             for py_file in src_core.rglob("*.py"):
                 rel_path = py_file.relative_to(src_core)
-                dest_file = core_dir / rel_path
+                dest_file = g_etl_dir / rel_path
                 dest_file.parent.mkdir(parents=True, exist_ok=True)
                 dest_file.write_text(py_file.read_text())
 
             # Skapa __init__.py för runner
             (plugin_dir / "runner" / "__init__.py").touch()
 
-            # Transformera importer (samma som i build-tasken)
-            for py_file in core_dir.rglob("*.py"):
-                content = py_file.read_text()
-                # Transformera importer
-                content = re.sub(r"from g_etl\.", "from g_etl.runner.core.", content)
-                content = re.sub(r"import g_etl\.", "import g_etl.runner.core.", content)
-                py_file.write_text(content)
+            # Verifiera att g_etl-paketet finns med __init__.py
+            assert (g_etl_dir / "__init__.py").exists(), (
+                "runner/g_etl/__init__.py saknas"
+            )
 
-            # Verifiera att inga otransformerade importer finns kvar
-            untransformed = []
-            for py_file in core_dir.rglob("*.py"):
-                content = py_file.read_text()
-                lines = content.split("\n")
-                for line_no, line in enumerate(lines, 1):
-                    # Matcha 'from g_etl.' som INTE följs av 'runner.core.'
-                    if re.search(r"from g_etl\.(?!runner\.core\.)", line):
-                        rel_path = py_file.relative_to(plugin_dir)
-                        untransformed.append(f"{rel_path}:{line_no}: {line.strip()}")
-                    if re.search(r"import g_etl\.(?!runner\.core\.)", line):
-                        rel_path = py_file.relative_to(plugin_dir)
-                        untransformed.append(f"{rel_path}:{line_no}: {line.strip()}")
+            # Verifiera nödvändiga moduler
+            required = [
+                "settings.py",
+                "sql_generator.py",
+                "export.py",
+                "admin/services/pipeline_runner.py",
+                "plugins/__init__.py",
+                "migrations/migrator.py",
+                "utils/logging.py",
+                "utils/downloader.py",
+            ]
+            missing = []
+            for module in required:
+                if not (g_etl_dir / module).exists():
+                    missing.append(module)
 
-            assert not untransformed, "Otransformerade importer hittades:\n" + "\n".join(
-                untransformed
+            assert not missing, (
+                f"Nödvändiga moduler saknas i runner/g_etl/: {missing}"
             )
 
     def test_all_core_imports_are_internal(self, project_root: Path):
