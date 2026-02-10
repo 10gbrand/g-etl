@@ -146,6 +146,7 @@ class PipelineScreen(Screen):
         Binding("c", "clear_selection", "Rensa val"),
         Binding("d", "clear_data", "Rensa data"),
         Binding("e", "app.push_screen('explorer')", "Explorer"),
+        Binding("h", "app.push_screen('h3_query')", "H3 Query"),
         Binding("g", "app.push_screen('migrations')", "Migrationer"),
         Binding("m", "toggle_mock", "Mock-läge"),
         Binding("q", "quit", "Avsluta"),
@@ -312,6 +313,7 @@ class PipelineScreen(Screen):
             yield Button("Kör typ [T]", id="btn-type", variant="warning")
             yield Button("Kör alla [A]", id="btn-all", variant="success")
             yield Button("Stoppa [S]", id="btn-stop", variant="error", disabled=True)
+            yield Button("H3 Query [H]", id="btn-h3query", variant="primary")
             yield Button("Explorer [E]", id="btn-explorer", variant="default")
 
         yield Footer()
@@ -750,5 +752,7 @@ class PipelineScreen(Screen):
             await self.action_run_all()
         elif event.button.id == "btn-stop":
             await self.action_stop()
+        elif event.button.id == "btn-h3query":
+            self.app.push_screen("h3_query")
         elif event.button.id == "btn-explorer":
             self.app.push_screen("explorer")

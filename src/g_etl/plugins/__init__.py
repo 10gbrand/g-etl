@@ -6,6 +6,7 @@ from g_etl.plugins.geopackage import clear_download_cache as _clear_gpkg_direct_
 from g_etl.plugins.geoparquet import GeoParquetPlugin
 from g_etl.plugins.lantmateriet import LantmaterietPlugin
 from g_etl.plugins.wfs import WfsPlugin
+from g_etl.plugins.wfs_geopandas import WfsGeopandasPlugin
 from g_etl.plugins.zip_geopackage import ZipGeoPackagePlugin
 from g_etl.plugins.zip_geopackage import clear_download_cache as _clear_gpkg_cache
 from g_etl.plugins.zip_shapefile import ZipShapefilePlugin
@@ -21,6 +22,7 @@ def clear_download_cache() -> None:
 
 PLUGINS: dict[str, type[SourcePlugin]] = {
     "wfs": WfsPlugin,
+    "wfs_geopandas": WfsGeopandasPlugin,  # Robust WFS för trasiga servrar
     "lantmateriet": LantmaterietPlugin,
     "geopackage": GeoPackagePlugin,
     "geoparquet": GeoParquetPlugin,

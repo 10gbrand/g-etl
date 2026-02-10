@@ -131,6 +131,26 @@ CREATE OR REPLACE MACRO g_format_date_iso(d) AS
     END;
 
 -- =============================================================================
+-- H3 Query-makron (för polygon-baserade queries)
+-- =============================================================================
+
+-- Konvertera WKT polygon (SWEREF99) till H3-celler för query
+CREATE OR REPLACE MACRO g_h3_query_cells(polygon_wkt, resolution) AS
+    h3_polygon_wkt_to_cells_string(
+        ST_AsText(ST_Transform(
+            ST_GeomFromText(polygon_wkt),
+            g_proj4_sweref99(),
+            g_proj4_wgs84()
+        )),
+        resolution
+    );
+
+-- Skapa en tabell med query-celler från polygon (för JOIN)
+-- Användning: SELECT * FROM g_h3_query_table('POLYGON((x y, ...))', 8)
+CREATE OR REPLACE MACRO g_h3_query_table(polygon_wkt, resolution) AS TABLE
+    SELECT UNNEST(g_h3_query_cells(polygon_wkt, resolution)) AS h3_cell;
+
+-- =============================================================================
 -- Bakåtkompatibla alias (utan prefix) - kan tas bort senare
 -- =============================================================================
 

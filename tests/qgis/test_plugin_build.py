@@ -95,22 +95,16 @@ class TestPluginImportStructure:
         content = qgis_runner.read_text()
 
         # Ska lägga runner/ i sys.path
-        assert "sys.path" in content, (
-            "qgis_runner.py ska lägga runner/ i sys.path"
-        )
+        assert "sys.path" in content, "qgis_runner.py ska lägga runner/ i sys.path"
         # Ska importera från g_etl (via sys.path, inte relativ .runner.core)
-        assert "from g_etl." in content, (
-            "qgis_runner.py ska importera från g_etl via sys.path"
-        )
+        assert "from g_etl." in content, "qgis_runner.py ska importera från g_etl via sys.path"
 
     def test_build_task_uses_runner_g_etl(self, project_root: Path):
         """Verifiera att build-tasken kopierar till runner/g_etl/."""
         qgis_yml = project_root / "taskfiles" / "qgis.yml"
         content = qgis_yml.read_text()
 
-        assert "runner/g_etl" in content, (
-            "Build-tasken ska kopiera core-moduler till runner/g_etl/"
-        )
+        assert "runner/g_etl" in content, "Build-tasken ska kopiera core-moduler till runner/g_etl/"
 
 
 class TestPluginBuildIntegration:
@@ -148,9 +142,7 @@ class TestPluginBuildIntegration:
             (plugin_dir / "runner" / "__init__.py").touch()
 
             # Verifiera att g_etl-paketet finns med __init__.py
-            assert (g_etl_dir / "__init__.py").exists(), (
-                "runner/g_etl/__init__.py saknas"
-            )
+            assert (g_etl_dir / "__init__.py").exists(), "runner/g_etl/__init__.py saknas"
 
             # Verifiera nödvändiga moduler
             required = [
@@ -168,9 +160,7 @@ class TestPluginBuildIntegration:
                 if not (g_etl_dir / module).exists():
                     missing.append(module)
 
-            assert not missing, (
-                f"Nödvändiga moduler saknas i runner/g_etl/: {missing}"
-            )
+            assert not missing, f"Nödvändiga moduler saknas i runner/g_etl/: {missing}"
 
     def test_all_core_imports_are_internal(self, project_root: Path):
         """Verifiera att alla importer i core refererar till g_etl-moduler."""
