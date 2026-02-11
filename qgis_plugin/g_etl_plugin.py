@@ -14,14 +14,15 @@ from qgis.PyQt.QtCore import QObject, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 
-# Importera dialog-moduler tidigt (innan g_etl cache rensas i qgis_runner)
-from .dialog import DatasetDialog, DependencyDialog, ProgressDialog
 from .deps import (
     check_dependencies,
     ensure_dependencies,
     get_install_command,
     install_duckdb_extensions,
 )
+
+# Importera dialog-moduler tidigt (innan g_etl cache rensas i qgis_runner)
+from .dialog import DatasetDialog, DependencyDialog, ProgressDialog
 
 
 class GETLPlugin:

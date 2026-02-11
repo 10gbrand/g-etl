@@ -30,13 +30,13 @@ def _ensure_core_imports():
 
     # VIKTIGT: Rensa g_etl från sys.modules om den är importerad från fel plats
     # QGIS laddar plugin-rooten som g_etl, men vi vill ha runner/g_etl/
-    if 'g_etl' in sys.modules:
-        g_etl_module = sys.modules['g_etl']
-        g_etl_file = getattr(g_etl_module, '__file__', '')
+    if "g_etl" in sys.modules:
+        g_etl_module = sys.modules["g_etl"]
+        g_etl_file = getattr(g_etl_module, "__file__", "")
         # Om g_etl är importerad från plugin-rooten (inte runner), rensa den
-        if 'runner' not in g_etl_file:
+        if "runner" not in g_etl_file:
             # Rensa alla g_etl-submoduler från cache
-            modules_to_remove = [key for key in sys.modules.keys() if key.startswith('g_etl')]
+            modules_to_remove = [key for key in sys.modules.keys() if key.startswith("g_etl")]
             for module_name in modules_to_remove:
                 del sys.modules[module_name]
 
