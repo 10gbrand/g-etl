@@ -14,15 +14,19 @@ echo ""
 
 # Skapa mappar
 echo "Skapar mappar..."
-mkdir -p config sql/migrations data input_data docker/huey
+mkdir -p config sql/migrations data input_data logs docker/huey
 
 # Ladda ner docker-compose.yml
 echo "Laddar ner docker-compose.yml..."
 curl -sL "${BASE_URL}/docker-compose.yml" -o docker-compose.yml
 
-# Ladda ner config-filer
-echo "Laddar ner config..."
-curl -sL "${BASE_URL}/config/datasets.yml" -o config/datasets.yml
+# Ladda ner config-filer (skriver inte över befintlig)
+if [ -f config/datasets.yml ]; then
+    echo "config/datasets.yml finns redan - behåller befintlig"
+else
+    echo "Laddar ner config..."
+    curl -sL "${BASE_URL}/config/datasets.yml" -o config/datasets.yml
+fi
 
 # Ladda ner SQL-filer dynamiskt via GitHub API
 echo "Laddar ner SQL-templates..."
@@ -45,6 +49,7 @@ echo "  config/datasets.yml  - Dataset-konfiguration (redigera för att välja d
 echo "  sql/migrations/      - SQL-templates för transformationer"
 echo "  input_data/          - Lägg lokala geodatafiler här (monteras som /app/input_data)"
 echo "  data/                - Resultat sparas här"
+echo "  logs/                - Loggfiler från pipeline-körningar"
 echo ""
 echo "Starta med:"
 echo "  docker compose run --rm admin"

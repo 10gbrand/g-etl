@@ -16,6 +16,8 @@ services:
       - ./config:/app/config:ro
       # Custom SQL (valfritt)
       - ./sql:/app/sql:ro
+      # Loggfiler från TUI/pipeline
+      - ./logs:/app/logs
     environment:
       # Lantmäteriet API (valfritt)
       - LM_API_KEY=${LM_API_KEY:-}

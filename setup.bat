@@ -18,6 +18,7 @@ if not exist config mkdir config
 if not exist sql\migrations mkdir sql\migrations
 if not exist data mkdir data
 if not exist input_data mkdir input_data
+if not exist logs mkdir logs
 if not exist docker\huey mkdir docker\huey
 
 REM Ladda ner docker-compose.yml
@@ -28,12 +29,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Ladda ner config-filer
-echo Laddar ner config...
-curl -sL "%BASE_URL%/config/datasets.yml" -o config\datasets.yml
-if errorlevel 1 (
-    echo Fel: Kunde inte ladda ner datasets.yml
-    exit /b 1
+REM Ladda ner config-filer (skriver inte over befintlig)
+if exist config\datasets.yml (
+    echo config\datasets.yml finns redan - behaaller befintlig
+) else (
+    echo Laddar ner config...
+    curl -sL "%BASE_URL%/config/datasets.yml" -o config\datasets.yml
+    if errorlevel 1 (
+        echo Fel: Kunde inte ladda ner datasets.yml
+        exit /b 1
+    )
 )
 
 REM Ladda ner SQL-filer dynamiskt via GitHub API
@@ -63,6 +68,7 @@ echo   config\datasets.yml  - Dataset-konfiguration (redigera for att valja data
 echo   sql\migrations\      - SQL-templates for transformationer
 echo   input_data\          - Lagg lokala geodatafiler har (monteras som /app/input_data)
 echo   data\                - Resultat sparas har
+echo   logs\                - Loggfiler fran pipeline-korningar
 echo.
 echo Starta med:
 echo   docker compose run --rm admin

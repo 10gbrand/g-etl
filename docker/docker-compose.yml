@@ -9,6 +9,7 @@ services:
       - ../data:/app/data
       - ../config:/app/config
       - ../sql:/app/sql
+      - ../logs:/app/logs
     env_file:
       - ../.env
     tty: true
