@@ -220,7 +220,7 @@ class Pipeline:
         # Kör parallell transform (varje dataset i egen temp-DB)
         temp_dbs = await self._runner.run_parallel_transform(
             parquet_files=parquet_files,
-            phases=(True, True, True),  # staging, staging2, mart
+            phases=(True, True),  # staging, mart
             on_log=on_log,
             on_event=on_event,
         )

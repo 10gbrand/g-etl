@@ -17,6 +17,7 @@ from textual.app import App
 
 from g_etl.admin.models.dataset import DatasetConfig
 from g_etl.admin.screens.explorer import ExplorerScreen
+from g_etl.admin.screens.h3_query import H3QueryScreen
 from g_etl.admin.screens.migrations import MigrationsScreen
 from g_etl.admin.screens.pipeline import PipelineScreen
 from g_etl.admin.services.db_session import cleanup_old_databases, get_session_db_path
@@ -66,6 +67,10 @@ class AdminApp(App):
         self.install_screen(
             lambda: MigrationsScreen(db_path=self.db_path),
             name="migrations",
+        )
+        self.install_screen(
+            H3QueryScreen,
+            name="h3_query",
         )
 
         # Show pipeline screen as default

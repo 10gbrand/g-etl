@@ -14,6 +14,15 @@ from qgis.PyQt.QtCore import QObject, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox
 
+# Importera dialog-moduler tidigt (innan g_etl cache rensas i qgis_runner)
+from .dialog import DatasetDialog, DependencyDialog, ProgressDialog
+from .deps import (
+    check_dependencies,
+    ensure_dependencies,
+    get_install_command,
+    install_duckdb_extensions,
+)
+
 
 class GETLPlugin:
     """G-ETL QGIS Plugin."""
@@ -65,18 +74,9 @@ class GETLPlugin:
         Returns:
             True om dependencies finns/installerades.
         """
-        from .deps import (
-            check_dependencies,
-            ensure_dependencies,
-            get_install_command,
-            install_duckdb_extensions,
-        )
-
         missing = check_dependencies()
 
         if missing:
-            from .dialog import DependencyDialog
-
             dialog = DependencyDialog(missing, self.iface.mainWindow())
 
             if dialog.exec_():
@@ -146,8 +146,6 @@ class GETLPlugin:
             return
 
         # Visa dataset-dialog
-        from .dialog import DatasetDialog
-
         dialog = DatasetDialog(datasets, self.iface.mainWindow())
 
         if dialog.exec_():
@@ -175,8 +173,6 @@ class GETLPlugin:
         phases: Tuple[bool, bool],
     ):
         """Kör pipeline i bakgrundstråd."""
-        from .dialog import ProgressDialog
-
         progress_dialog = ProgressDialog(self.iface.mainWindow())
 
         # Skapa task

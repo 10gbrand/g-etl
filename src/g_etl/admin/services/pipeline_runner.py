@@ -1048,6 +1048,98 @@ class PipelineRunner:
 
         return success
 
+    def _generate_h3_union_sql(
+        self,
+        conn,
+        sql: str,
+        on_log: Callable[[str], None] | None = None,
+    ) -> str:
+        """Genererar dynamisk UNION ALL SQL för H3-index från alla mart.*_h3 tabeller.
+
+        Args:
+            conn: DuckDB-anslutning
+            sql: SQL-mall med {{ DYNAMIC_H3_UNION_SQL }} placeholder
+            on_log: Callback för loggning
+
+        Returns:
+            SQL med genererad UNION ALL
+        """
+        # Hitta alla mart.*_h3 tabeller (exkluderar *_compact)
+        result = conn.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'mart'
+              AND table_type = 'BASE TABLE'
+              AND table_name LIKE '%_h3'
+              AND table_name NOT LIKE '%_h3_compact'
+            ORDER BY table_name
+        """).fetchall()
+
+        table_names = [row[0] for row in result]
+
+        if not table_names:
+            if on_log:
+                on_log("    VARNING: Inga mart.*_h3 tabeller hittades")
+            # Returnera en tom tabell om inga datasets finns
+            generated_sql = """
+CREATE OR REPLACE TABLE mart.h3_index AS
+SELECT
+    NULL::VARCHAR AS id,
+    NULL::VARCHAR AS dataset_id,
+    NULL::VARCHAR AS leverantor,
+    NULL::VARCHAR AS klass,
+    NULL::VARCHAR AS h3_cell,
+    NULL::GEOMETRY AS geom
+WHERE FALSE;
+"""
+        else:
+            if on_log:
+                on_log(f"    Genererar VIEW från {len(table_names)} tabeller")
+
+            # Generera UNION ALL för VIEW (sparar diskutrymme jämfört med materialiserad tabell)
+            union_parts = []
+            for table_name in table_names:
+                union_parts.append(f"""    SELECT
+        id,
+        dataset AS dataset_id,
+        leverantor,
+        klass,
+        h3_cell,
+        geom
+    FROM mart.{table_name}""")
+
+            union_sql = "\n    UNION ALL\n".join(union_parts)
+
+            generated_sql = f"""
+-- Ta bort eventuella befintliga objekt (från tidigare körningar)
+DROP VIEW IF EXISTS mart.h3_index;
+DROP TABLE IF EXISTS mart.h3_index;
+
+-- Skapa VIEW istället för TABLE för att spara diskutrymme
+-- Query-prestanda är likvärdig tack vare DuckDBs optimizer
+CREATE VIEW mart.h3_index AS
+{union_sql};
+
+-- Aggregerad statistik per H3-cell (för heatmaps)
+-- Också en VIEW för att undvika minnesproblem med stora dataset
+DROP VIEW IF EXISTS mart.h3_stats;
+DROP TABLE IF EXISTS mart.h3_stats;
+
+CREATE VIEW mart.h3_stats AS
+SELECT
+    h3_cell,
+    COUNT(*) AS object_count,
+    COUNT(DISTINCT dataset_id) AS dataset_count,
+    LIST(DISTINCT dataset_id ORDER BY dataset_id) AS datasets,
+    LIST(DISTINCT klass ORDER BY klass) AS klasser,
+    LIST(DISTINCT leverantor ORDER BY leverantor) AS leverantorer
+FROM mart.h3_index
+GROUP BY h3_cell;
+"""
+
+        # Ersätt placeholdern med genererad SQL
+        return sql.replace("{{ DYNAMIC_H3_UNION_SQL }}", generated_sql)
+
     async def run_merged_sql(
         self,
         on_log: Callable[[str], None] | None = None,
@@ -1082,6 +1174,10 @@ class PipelineRunner:
 
             try:
                 sql = sql_file.read_text()
+
+                # Hantera dynamisk SQL-generering för H3-index
+                if "{{ DYNAMIC_H3_UNION_SQL }}" in sql:
+                    sql = self._generate_h3_union_sql(conn, sql, on_log)
 
                 def do_sql(sql_to_run=sql):
                     conn.execute(sql_to_run)

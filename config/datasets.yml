@@ -515,10 +515,14 @@ datasets:
     name: Värdefulla vatten - Levande sjöar och vattendrag
     description: Levande sjöar och vattendrag från Havs- och vattenmyndigheten
     typ: hav_wfs
-    plugin: wfs
+    plugin: wfs_geopandas
     url: http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows
     layer: vardefulla-vatten:levande-sjoar-vattendrag
-    enabled: true
+    enabled: false  # Inaktiverad - WFS-server returnerar trasigt JSON
+    # WFS-specifika inställningar för stora datasets
+    paginate: true       # Använd paginering (chunks)
+    page_size: 50        # Mycket litet pga trasig WFS-server
+    max_features: 500    # Begränsa totalt (ta bort när det fungerar)
     field_mapping:
       source_id_column:
       klass: vardefullavatten

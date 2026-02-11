@@ -1,0 +1,12 @@
+-- Konsoliderad H3-index över ALLA datasets
+-- Schema: mart
+-- Källa: mart.*_h3 (exploderade H3-tabeller från 006_mart_h3_cells_template.sql)
+-- Skapar en central tabell med alla H3-celler från alla datasets
+-- Körs EFTER merge (post-merge SQL)
+--
+-- DYNAMISK VERSION - Hittar automatiskt alla *_h3 tabeller i mart
+-- Ingen manuell uppdatering behövs när datasets läggs till/tas bort!
+--
+-- DYNAMISK SQL - Genereras automatiskt från mart.*_h3 tabeller av PipelineRunner
+-- Skapar mart.h3_index och mart.h3_stats som VIEWs för att spara diskutrymme
+{{ DYNAMIC_H3_UNION_SQL }}
