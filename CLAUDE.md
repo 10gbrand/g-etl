@@ -12,6 +12,8 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 
 **Pipeline:**
 - `task run` - Kör hela pipelinen (extract + transform)
+- `task run -- --keep-staging` - Behåll staging-tabeller i warehouse efter merge
+- `task run -- --save-sql` - Spara renderade SQL-filer till `data/log_sql/`
 - `task pipeline:extract` - Kör bara extract (hämta data)
 - `task pipeline:transform` - Kör bara SQL-transformationer
 - `task pipeline:dataset -- <id>` - Kör specifikt dataset
@@ -113,11 +115,19 @@ Transform (parallellt, en temp-DB per dataset):
 
 Merge:
 └── warehouse.duckdb ← alla temp-DBs (raw + mart)
+    (med --keep-staging: även staging_004, staging_005, staging_ext_restr_* etc.)
 
 Post-merge:
 ├── Pipeline-merged (*_merged.sql per pipeline-katalog)
 └── Post-pipeline (x*.sql i roten)
 ```
+
+**Debug-toggles (CLI-flaggor / TUI-checkboxar):**
+
+| Toggle | CLI | TUI | Effekt |
+|--------|-----|-----|--------|
+| **Behåll staging** | `--keep-staging` | Checkbox | Kopierar även staging-scheman till warehouse vid merge |
+| **Spara SQL** | `--save-sql` | Checkbox | Sparar renderade SQL-templates till `data/log_sql/{dataset_id}/` |
 
 **Dataflöde genom DuckDB-scheman:**
 - `raw/` - Rå ingesterad data från plugins
@@ -140,13 +150,6 @@ OBS: Staging-scheman skapas dynamiskt. Root-templates genererar `staging_NNN`, p
 - `sql/migrations/` - Alla SQL-filer (init + templates)
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
 - `src/g_etl/settings.py` - Centrala inställningar (H3-resolution, CRS, parallelism)
-
-**Heatmap-visualisering (optional):**
-
-Data Explorer i TUI:n stödjer heatmap-rendering med bakgrundskarta.
-Installera `uv sync --extra viz` för att aktivera (matplotlib, contextily, rich-pixels, Pillow).
-Tangent `h` i Explorer-skärmen växlar mellan braille-karta och heatmap.
-Pipeline: DuckDB → matplotlib hexbin + contextily basemap → PNG → rich-pixels halfblock → Textual.
 
 **Auto-detekterad parallelism (settings.py):**
 

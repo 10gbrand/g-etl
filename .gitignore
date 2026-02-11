@@ -213,6 +213,10 @@ __marimo__/
 data/**/*
 !data/**/.gitkeep
 
+# Input data - keep directory, ignore files
+input_data/*
+!input_data/.gitkeep
+
 # DuckDB database files
 *.duckdb
 *.duckdb.wal

@@ -71,6 +71,28 @@ class DatasetConfig:
         """Skapa DatasetConfig från datasets.yml-entry."""
         fm = config.get("field_mapping", {})
 
+        # Kända field_mapping-nycklar som har explicit hantering
+        known_fields = {
+            "source_id_column",
+            "geometry_column",
+            "h3_center_resolution",
+            "h3_polyfill_resolution",
+            "h3_line_resolution",
+            "h3_point_resolution",
+            "h3_line_buffer_meters",
+            "klass",
+            "grupp",
+            "typ",
+            "leverantor",
+            "data_mappings",
+        }
+
+        # Samla explicita data_mappings + alla okända nycklar
+        extra = dict(fm.get("data_mappings", {}))
+        for key, value in fm.items():
+            if key not in known_fields and value is not None:
+                extra[key] = str(value)
+
         return cls(
             dataset_id=dataset_id,
             pipeline=config.get("pipeline", ""),
@@ -85,7 +107,7 @@ class DatasetConfig:
             grupp=fm.get("grupp", ""),
             typ=fm.get("typ", ""),
             leverantor=fm.get("leverantor", ""),
-            data_mappings=fm.get("data_mappings", {}),
+            data_mappings=extra,
         )
 
 
@@ -395,14 +417,23 @@ class SQLGenerator:
         else:
             variables["typ_expr"] = f"'{config.typ}'"
 
-        # data_N_expr för extra kolumner (alltid kolumnreferenser)
-        for i in range(1, 6):
-            target = f"data_{i}"
-            if target in config.data_mappings:
-                source = self._get_column_name(config.data_mappings[target])
-                variables[f"data_{i}_expr"] = f"COALESCE(s.{source}::VARCHAR, '')"
+        # Dynamiska variabler från data_mappings (inkl data_N och egna nycklar)
+        # Varje nyckel "foo" med värde "$kolumn" → {{ foo_expr }} = COALESCE(s.kolumn::VARCHAR, '')
+        # Varje nyckel "foo" med värde "literal" → {{ foo_expr }} = 'literal'
+        for key, value in config.data_mappings.items():
+            if self._is_column_ref(value):
+                col = self._get_column_name(value)
+                variables[f"{key}_expr"] = f"COALESCE(s.{col}::VARCHAR, '')"
+            elif value:
+                variables[f"{key}_expr"] = f"'{value}'"
             else:
-                variables[f"data_{i}_expr"] = "''"
+                variables[f"{key}_expr"] = "''"
+
+        # Säkerställ att data_1..data_5 alltid finns (bakåtkompatibilitet)
+        for i in range(1, 6):
+            key = f"data_{i}_expr"
+            if key not in variables:
+                variables[key] = "''"
 
         return variables
 

@@ -19,6 +19,7 @@ class TestSettings:
         assert settings.RAW_DIR == Path("data/raw")
         assert settings.TEMP_DIR == Path("data/temp")
         assert settings.LOGS_DIR == Path("logs")
+        assert settings.LOG_SQL_DIR == Path("data/log_sql")
         assert settings.SQL_DIR == Path("sql")
 
     def test_db_settings(self):
@@ -128,6 +129,32 @@ class TestSettings:
         assert not (temp_dir / "test1.duckdb").exists()
         assert not (temp_dir / "test2.duckdb").exists()
         assert (temp_dir / "keep.txt").exists()  # Ska inte tas bort
+
+    def test_cleanup_log_sql(self, temp_dir, monkeypatch):
+        """Testa att cleanup_log_sql rensar och återskapar katalogen."""
+        test_settings = Settings()
+        log_sql_dir = temp_dir / "log_sql"
+        monkeypatch.setattr(test_settings, "LOG_SQL_DIR", log_sql_dir)
+
+        # Skapa befintlig katalog med filer
+        (log_sql_dir / "old_dataset").mkdir(parents=True)
+        (log_sql_dir / "old_dataset" / "004_staging.sql").write_text("SELECT 1")
+
+        test_settings.cleanup_log_sql()
+
+        # Katalogen ska finnas men vara tom
+        assert log_sql_dir.exists()
+        assert not (log_sql_dir / "old_dataset").exists()
+
+    def test_cleanup_log_sql_creates_dir(self, temp_dir, monkeypatch):
+        """Testa att cleanup_log_sql skapar katalogen om den inte finns."""
+        test_settings = Settings()
+        log_sql_dir = temp_dir / "log_sql"
+        monkeypatch.setattr(test_settings, "LOG_SQL_DIR", log_sql_dir)
+
+        assert not log_sql_dir.exists()
+        test_settings.cleanup_log_sql()
+        assert log_sql_dir.exists()
 
 
 class TestCpuCount:

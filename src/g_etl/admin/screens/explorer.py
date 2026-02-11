@@ -24,7 +24,6 @@ from textual.widgets.selection_list import Selection
 
 from g_etl.admin.services.db_session import get_current_db_path
 from g_etl.admin.widgets.ascii_map import BrailleMapWidget
-from g_etl.admin.widgets.heatmap import MatplotlibMapWidget, is_heatmap_available
 from g_etl.export import export_mart_tables
 from g_etl.pipeline import FileLogger
 from g_etl.settings import settings
@@ -87,7 +86,6 @@ class ExplorerScreen(Screen):
         Binding("r", "refresh_tables", "Uppdatera"),
         Binding("m", "show_map", "Visa karta"),
         Binding("e", "export_selected", "Exportera"),
-        Binding("h", "toggle_heatmap", "Heatmap"),
         Binding("a", "select_all", "Markera alla"),
         Binding("q", "app.pop_screen", "Tillbaka"),
     ]
@@ -251,18 +249,11 @@ class ExplorerScreen(Screen):
                     )
                     yield Button("Exportera [e]", id="export-btn", variant="primary")
 
-        self._using_heatmap = is_heatmap_available()
-
         with Vertical(id="right-panel"):
             with Horizontal(id="top-row"):
                 yield TableInfo(id="table-info")
                 with Container(id="map-container"):
-                    if self._using_heatmap:
-                        yield MatplotlibMapWidget(width=80, height=25, title="Geometri-heatmap")
-                    else:
-                        yield BrailleMapWidget(
-                            width=80, height=25, title="Geometri-förhandsvisning"
-                        )
+                    yield BrailleMapWidget(width=80, height=25, title="Geometri-förhandsvisning")
             with Container(id="data-preview-container"):
                 yield DataTable(id="data-table")
 
@@ -464,10 +455,8 @@ class ExplorerScreen(Screen):
                     display_row.append(str_val)
             data_table.add_row(*display_row)
 
-    def _find_map_widget(self) -> BrailleMapWidget | MatplotlibMapWidget:
-        """Hitta den aktiva kart-widgeten."""
-        if self._using_heatmap:
-            return self.query_one(MatplotlibMapWidget)
+    def _find_map_widget(self) -> BrailleMapWidget:
+        """Hitta kart-widgeten."""
         return self.query_one(BrailleMapWidget)
 
     @work(thread=True)
@@ -510,44 +499,6 @@ class ExplorerScreen(Screen):
         """Visa/dölj kartan."""
         # Kartan visas alltid för geometri-tabeller
         pass
-
-    def action_toggle_heatmap(self) -> None:
-        """Växla mellan heatmap och braille-karta."""
-        container = self.query_one("#map-container")
-
-        if self._using_heatmap:
-            # Byt till braille
-            try:
-                old = container.query_one(MatplotlibMapWidget)
-                old.remove()
-            except Exception:
-                pass
-            braille = BrailleMapWidget(width=80, height=25, title="Geometri-förhandsvisning")
-            container.mount(braille)
-            self._using_heatmap = False
-            self.notify("Braille-karta")
-        else:
-            if not is_heatmap_available():
-                self.notify(
-                    "Heatmap ej tillgänglig. Installera: uv sync --extra viz",
-                    severity="warning",
-                )
-                return
-            # Byt till heatmap
-            try:
-                old = container.query_one(BrailleMapWidget)
-                old.remove()
-            except Exception:
-                pass
-            heatmap = MatplotlibMapWidget(width=80, height=25, title="Geometri-heatmap")
-            container.mount(heatmap)
-            self._using_heatmap = True
-            self.notify("Heatmap")
-
-        # Ladda om data om en tabell är vald
-        if self.current_table:
-            schema, table = self.current_table
-            self._load_table_info(schema, table)
 
     def action_select_all(self) -> None:
         """Markera/avmarkera alla mart-tabeller."""

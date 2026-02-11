@@ -2,8 +2,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-import yaml
-
 
 class DatasetStatus(Enum):
     PENDING = "pending"
@@ -21,6 +19,7 @@ class Dataset:
     description: str
     plugin: str
     typ: str = ""  # Typ för gruppering (t.ex. naturvardsverket_wfs)
+    pipeline: str = ""  # Pipeline-namn (t.ex. "ext_restr")
     enabled: bool = True
     status: DatasetStatus = DatasetStatus.PENDING
     progress: int = 0
@@ -55,22 +54,17 @@ class DatasetConfig:
 
     @classmethod
     def load(cls, config_path: Path | str = "config/datasets.yml") -> "DatasetConfig":
-        path = Path(config_path)
-        if not path.exists():
-            return cls()
-
-        with open(path) as f:
-            data = yaml.safe_load(f)
+        from g_etl.config_loader import load_datasets_config
 
         datasets = []
-        for d in data.get("datasets", []):
-            # Extrahera känd config, resten går till config-dict
+        for d in load_datasets_config(config_path):
             dataset = Dataset(
                 id=d["id"],
                 name=d["name"],
                 description=d.get("description", ""),
                 plugin=d.get("plugin", "unknown"),
                 typ=d.get("typ", ""),
+                pipeline=d.get("pipeline", ""),
                 enabled=d.get("enabled", True),
                 config=d,  # Hela dict:en för plugin-användning
             )
@@ -88,6 +82,14 @@ class DatasetConfig:
     def get_types(self) -> list[str]:
         """Hämta alla unika typer."""
         return list(set(d.typ for d in self.datasets if d.typ))
+
+    def get_by_pipeline(self, pipeline: str) -> list[Dataset]:
+        """Filtrera datasets efter pipeline."""
+        return [d for d in self.datasets if d.pipeline == pipeline and d.enabled]
+
+    def get_pipelines(self) -> list[str]:
+        """Hämta alla unika pipeline-namn."""
+        return list(set(d.pipeline for d in self.datasets if d.pipeline))
 
     def get_by_id(self, dataset_id: str) -> Dataset | None:
         for d in self.datasets:

@@ -117,6 +117,49 @@ OLAND_OUTLINE = [
     (635000, 6280000),
 ]
 
+# Terminal-tecken är ca 1:2 (bredd:höjd). Braille-dots (2×4 per cell) är ~kvadratiska.
+CHAR_ASPECT = 0.5  # bredd / höjd för ett terminaltecken
+
+
+def _effective_map_area(
+    grid_width: int,
+    grid_height: int,
+    cell_aspect: float = CHAR_ASPECT,
+) -> tuple[int, int, int, int]:
+    """Beräkna effektiv kartyta som bevarar Sveriges proportioner.
+
+    Fit-within: beräknar hur många celler som behövs i X/Y för att
+    kartan ska se korrekt ut givet cellernas aspect ratio.
+
+    Args:
+        grid_width: Tillgänglig bredd i celler (kolumner / dots)
+        grid_height: Tillgänglig höjd i celler (rader / dots)
+        cell_aspect: Cellens bredd/höjd (0.5 för terminaltecken, 1.0 för braille-dots)
+
+    Returns:
+        (eff_width, eff_height, offset_x, offset_y)
+    """
+    data_w = SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"]  # 655 000
+    data_h = SWEDEN_BBOX["max_y"] - SWEDEN_BBOX["min_y"]  # 1 548 000
+
+    # Visuellt: eff_w * cell_w_px / (eff_h * cell_h_px) = data_w / data_h
+    # → eff_w / eff_h = (data_w / data_h) / cell_aspect
+    target_ratio = (data_w / data_h) / cell_aspect
+
+    if target_ratio * grid_height <= grid_width:
+        # Höjd-begränsad: använd full höjd
+        eff_h = grid_height
+        eff_w = max(1, int(target_ratio * grid_height))
+    else:
+        # Bredd-begränsad: använd full bredd
+        eff_w = grid_width
+        eff_h = max(1, int(grid_width / target_ratio))
+
+    offset_x = (grid_width - eff_w) // 2
+    offset_y = (grid_height - eff_h) // 2
+
+    return eff_w, eff_h, offset_x, offset_y
+
 
 def load_centroids_from_query(
     conn: duckdb.DuckDBPyConnection,
@@ -309,24 +352,32 @@ class AsciiMapWidget(Static):
         # Skapa tom grid
         grid = [[" " for _ in range(self.map_width)] for _ in range(self.map_height)]
 
+        # Beräkna effektiv kartyta med korrekta proportioner
+        eff_w, eff_h, off_x, off_y = _effective_map_area(
+            self.map_width, self.map_height, cell_aspect=CHAR_ASPECT
+        )
+
         # Densitetskarta - räkna antal punkter per cell
         density: dict[tuple[int, int], int] = {}
 
         for x, y in self.points:
             # Normalisera till grid-koordinater baserat på Sveriges bbox
-            nx = int(
-                (x - SWEDEN_BBOX["min_x"])
-                / (SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"])
-                * (self.map_width - 1)
+            nx = (
+                int(
+                    (x - SWEDEN_BBOX["min_x"])
+                    / (SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"])
+                    * (eff_w - 1)
+                )
+                + off_x
             )
             ny = int(
                 (y - SWEDEN_BBOX["min_y"])
                 / (SWEDEN_BBOX["max_y"] - SWEDEN_BBOX["min_y"])
-                * (self.map_height - 1)
+                * (eff_h - 1)
             )
-            ny = self.map_height - 1 - ny  # Flip Y-axis (norr uppåt)
+            ny = off_y + eff_h - 1 - ny  # Flip Y-axis (norr uppåt)
 
-            # Hantera punkter utanför bbox
+            # Hantera punkter utanför grid
             if 0 <= nx < self.map_width and 0 <= ny < self.map_height:
                 key = (nx, ny)
                 density[key] = density.get(key, 0) + 1
@@ -467,18 +518,26 @@ class CompactAsciiMap(Static):
         # Grid
         grid = [[" " for _ in range(self.map_width)] for _ in range(self.map_height)]
 
+        # Beräkna effektiv kartyta med korrekta proportioner
+        eff_w, eff_h, off_x, off_y = _effective_map_area(
+            self.map_width, self.map_height, cell_aspect=CHAR_ASPECT
+        )
+
         for x, y in self.points:
-            nx = int(
-                (x - SWEDEN_BBOX["min_x"])
-                / (SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"])
-                * (self.map_width - 1)
+            nx = (
+                int(
+                    (x - SWEDEN_BBOX["min_x"])
+                    / (SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"])
+                    * (eff_w - 1)
+                )
+                + off_x
             )
             ny = int(
                 (y - SWEDEN_BBOX["min_y"])
                 / (SWEDEN_BBOX["max_y"] - SWEDEN_BBOX["min_y"])
-                * (self.map_height - 1)
+                * (eff_h - 1)
             )
-            ny = self.map_height - 1 - ny
+            ny = off_y + eff_h - 1 - ny
 
             if 0 <= nx < self.map_width and 0 <= ny < self.map_height:
                 grid[ny][nx] = "●"
@@ -549,6 +608,11 @@ class BrailleMapWidget(Static):
         self._dot_width = width * 2
         self._dot_height = height * 4
 
+        # Precompute effektiv kartyta (braille-dots är ~kvadratiska → cell_aspect=1.0)
+        self._eff_w, self._eff_h, self._off_x, self._off_y = _effective_map_area(
+            self._dot_width, self._dot_height, cell_aspect=1.0
+        )
+
     def load_from_query(
         self,
         conn: duckdb.DuckDBPyConnection,
@@ -613,17 +677,20 @@ class BrailleMapWidget(Static):
 
     def _coord_to_dot(self, x: float, y: float) -> tuple[int, int]:
         """Konvertera SWEREF99 TM-koordinat till dot-koordinat."""
-        dx = int(
-            (x - SWEDEN_BBOX["min_x"])
-            / (SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"])
-            * (self._dot_width - 1)
+        dx = (
+            int(
+                (x - SWEDEN_BBOX["min_x"])
+                / (SWEDEN_BBOX["max_x"] - SWEDEN_BBOX["min_x"])
+                * (self._eff_w - 1)
+            )
+            + self._off_x
         )
         dy = int(
             (y - SWEDEN_BBOX["min_y"])
             / (SWEDEN_BBOX["max_y"] - SWEDEN_BBOX["min_y"])
-            * (self._dot_height - 1)
+            * (self._eff_h - 1)
         )
-        dy = self._dot_height - 1 - dy  # Flip Y (norr uppåt)
+        dy = self._off_y + self._eff_h - 1 - dy  # Flip Y (norr uppåt)
         return dx, dy
 
     def _draw_line(

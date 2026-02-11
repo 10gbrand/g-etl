@@ -15,6 +15,8 @@ SELECT
     {{ grupp_expr }} AS grupp,
     {{ typ_expr }} AS typ,
     '{{ leverantor }}' AS leverantor,
+    {{ area_expr }} AS area,
+    {{ volym_expr }} AS volym,
     s._h3_index AS h3_center,
     s._h3_cells AS h3_cells,
     s._json_data AS json_data,

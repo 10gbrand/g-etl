@@ -294,6 +294,9 @@ class PipelineScreen(Screen):
                 yield Checkbox("1. Extract", id="phase-extract", value=True)
                 yield Checkbox("2. Staging", id="phase-staging", value=True)
                 yield Checkbox("3. Mart", id="phase-mart", value=True)
+                yield Label("  Alternativ:")
+                yield Checkbox("Behåll staging", id="keep-staging", value=False)
+                yield Checkbox("Spara SQL", id="save-sql", value=False)
 
         with Horizontal(id="main-content"):
             with Container(id="datasets-panel"):
@@ -411,8 +414,10 @@ class PipelineScreen(Screen):
             self.log_message("Inga datasets att köra")
             return
 
-        # Hämta valda faser
+        # Hämta valda faser och alternativ
         run_extract, run_staging, run_mart = self.get_selected_phases()
+        keep_staging = self.query_one("#keep-staging", Checkbox).value
+        save_sql = self.query_one("#save-sql", Checkbox).value
         if not any([run_extract, run_staging, run_mart]):
             self.log_message("Ingen fas vald - välj minst en fas att köra")
             return
@@ -615,6 +620,7 @@ class PipelineScreen(Screen):
                 phases=(run_staging, run_mart),
                 on_log=lambda msg: self.log_message(msg),
                 on_event=on_transform_event,
+                save_sql=save_sql,
             )
 
             # === FAS 3: MERGE ===
@@ -626,6 +632,7 @@ class PipelineScreen(Screen):
                 await self.runner.merge_databases(
                     temp_dbs=temp_dbs,
                     on_log=lambda msg: self.log_message(msg),
+                    keep_staging=keep_staging,
                 )
 
             # === FAS 4: POST-MERGE SQL ===

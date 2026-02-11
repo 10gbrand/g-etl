@@ -1,7 +1,6 @@
 """Widgets för G-ETL Admin TUI."""
 
 from g_etl.admin.widgets.ascii_map import AsciiMapWidget, BrailleMapWidget
-from g_etl.admin.widgets.heatmap import MatplotlibMapWidget, is_heatmap_available
 from g_etl.admin.widgets.multi_progress import (
     MultiProgressWidget,
     TaskProgress,
@@ -14,6 +13,4 @@ __all__ = [
     "TaskStatus",
     "AsciiMapWidget",
     "BrailleMapWidget",
-    "MatplotlibMapWidget",
-    "is_heatmap_available",
 ]

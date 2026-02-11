@@ -46,6 +46,7 @@ def sample_dataset_config():
         "description": "Ett test-dataset",
         "typ": "test",
         "plugin": "wfs",
+        "pipeline": "ext_restr",
         "enabled": True,
         "field_mapping": {
             "source_id_column": "$objekt_id",

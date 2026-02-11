@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
-import yaml
 
 from g_etl.migrations.migrator import Migrator
 from g_etl.plugins import clear_download_cache, get_plugin
@@ -552,14 +551,9 @@ class PipelineRunner:
 
     def _load_datasets_config(self) -> dict[str, dict]:
         """Ladda datasets.yml och returnera som dict keyed på dataset id."""
-        config_path = settings.CONFIG_DIR / "datasets.yml"
-        if not config_path.exists():
-            return {}
+        from g_etl.config_loader import load_datasets_config
 
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        datasets = config.get("datasets", [])
+        datasets = load_datasets_config()
         return {ds["id"]: ds for ds in datasets if "id" in ds}
 
     async def run_templates(
@@ -754,6 +748,7 @@ class PipelineRunner:
         phases: tuple[bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        save_sql: bool = False,
     ) -> list[tuple[str, str]]:
         """Kör valda templates parallellt med separata temp-DBs per dataset.
 
@@ -768,6 +763,7 @@ class PipelineRunner:
                     Om None körs alla faser.
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
+            save_sql: Spara renderade SQL-filer till data/log_sql/
 
         Returns:
             Lista av (dataset_id, temp_db_path) för merge
@@ -775,6 +771,12 @@ class PipelineRunner:
         generator = SQLGenerator()
         datasets_config = self._load_datasets_config()
         run_staging, run_mart = phases if phases else (True, True)
+
+        # Rensa och förbered SQL-loggkatalog
+        if save_sql:
+            settings.cleanup_log_sql()
+            if on_log:
+                on_log(f"Sparar renderad SQL till {settings.LOG_SQL_DIR}/")
 
         max_concurrent = settings.MAX_CONCURRENT_SQL
         semaphore = asyncio.Semaphore(max_concurrent)
@@ -864,6 +866,13 @@ class PipelineRunner:
                                     pipeline_templates=all_templates,
                                 )
                                 if sql:
+                                    if save_sql:
+                                        sql_log_dir = settings.LOG_SQL_DIR / dataset_id
+                                        sql_log_dir.mkdir(parents=True, exist_ok=True)
+                                        sql_filename = tmpl.relative_path.replace("/", "_")
+                                        (sql_log_dir / sql_filename).write_text(
+                                            sql, encoding="utf-8"
+                                        )
                                     temp_conn.execute(sql)
 
                         finally:
@@ -961,6 +970,7 @@ class PipelineRunner:
         temp_dbs: list[tuple[str, str]],
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        keep_staging: bool = False,
     ) -> bool:
         """Slå ihop temporära databaser till huvuddatabasen.
 
@@ -968,6 +978,7 @@ class PipelineRunner:
             temp_dbs: Lista av (dataset_id, temp_db_path)
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
+            keep_staging: Behåll staging-scheman i warehouse (kopieras från temp-DB)
 
         Returns:
             True om alla mergades framgångsrikt
@@ -980,6 +991,8 @@ class PipelineRunner:
 
         if on_log:
             on_log(f"=== Merge: {len(temp_dbs)} databaser → warehouse ===")
+            if keep_staging:
+                on_log("  (Behåller staging-scheman i warehouse)")
 
         for i, (dataset_id, temp_db_path) in enumerate(temp_dbs):
             if on_event:
@@ -999,10 +1012,25 @@ class PipelineRunner:
                     conn.execute(f"ATTACH '{temp_db_path}' AS temp_db (READ_ONLY)")
 
                     try:
-                        # Kopiera alla tabeller från alla scheman
-                        # Använd duckdb_tables() istället för information_schema
-                        # (information_schema fungerar inte för attached DBs)
-                        for schema in settings.DUCKDB_SCHEMAS:
+                        # Bestäm vilka scheman som ska kopieras
+                        if keep_staging:
+                            # Dynamisk: hitta ALLA scheman (inkl staging_*)
+                            schemas_to_merge = [
+                                row[0]
+                                for row in conn.execute("""
+                                    SELECT DISTINCT schema_name
+                                    FROM duckdb_tables()
+                                    WHERE database_name = 'temp_db'
+                                    AND schema_name NOT IN ('main', 'information_schema')
+                                """).fetchall()
+                            ]
+                        else:
+                            schemas_to_merge = list(settings.DUCKDB_SCHEMAS)
+
+                        for schema in schemas_to_merge:
+                            # Skapa schemat i warehouse om det inte finns
+                            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+
                             tables = conn.execute(f"""
                                 SELECT table_name
                                 FROM duckdb_tables()
@@ -1518,6 +1546,7 @@ class MockPipelineRunner(PipelineRunner):
         phases: tuple[bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        save_sql: bool = False,
     ) -> list[tuple[str, str]]:
         """Mock parallell transform."""
         run_staging, run_mart = phases if phases else (True, True)
@@ -1570,6 +1599,7 @@ class MockPipelineRunner(PipelineRunner):
         temp_dbs: list[tuple[str, str]],
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        keep_staging: bool = False,
     ) -> bool:
         """Mock merge."""
         if on_log:

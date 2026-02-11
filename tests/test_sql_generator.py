@@ -452,10 +452,10 @@ class TestSQLGeneratorEdgeCases:
         generator = SQLGenerator()
         variables = generator._build_variables(config)
 
-        # data_1 ska ha kolumnreferens ($ tas bort av _get_column_name)
+        # data_1 ska ha kolumnreferens ($extra_col1 → s.extra_col1)
         assert "s.extra_col1" in variables["data_1_expr"]
-        # data_2 ska också vara kolumnreferens
-        assert "s.extra_col2" in variables["data_2_expr"]
+        # data_2 utan $-prefix ska vara literal sträng
+        assert variables["data_2_expr"] == "'extra_col2'"
         # data_3-5 ska vara tomma
         assert variables["data_3_expr"] == "''"
 
