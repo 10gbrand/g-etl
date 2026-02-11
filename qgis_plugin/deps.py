@@ -18,6 +18,9 @@ REQUIRED_PACKAGES = {
     "jinja2": "jinja2",
     "requests": "requests",
     "dotenv": "python-dotenv",
+    "pyogrio": "pyogrio",
+    "shapely": "shapely",
+    "pyarrow": "pyarrow",
 }
 
 

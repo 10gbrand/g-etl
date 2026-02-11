@@ -207,9 +207,9 @@ class ZipShapefilePlugin(SourcePlugin):
                     SELECT * FROM ST_Read('{shp_path}')
                 """)
             except Exception as st_read_error:
-                # Fallback: Använd geopandas för encoding-problem
-                self._log("DuckDB ST_Read misslyckades, testar geopandas...", on_log)
-                rows_count = self._read_with_geopandas(
+                # Fallback: Använd pyogrio för encoding-problem
+                self._log("DuckDB ST_Read misslyckades, testar pyogrio...", on_log)
+                rows_count = self._read_with_pyogrio(
                     conn, shp_path, table_name, encoding, on_log, on_progress
                 )
                 if rows_count is not None:
@@ -218,7 +218,7 @@ class ZipShapefilePlugin(SourcePlugin):
                     return ExtractResult(
                         success=True,
                         rows_count=rows_count,
-                        message=f"Läste {rows_count} rader från {shp_path.name} (geopandas)",
+                        message=f"Läste {rows_count} rader från {shp_path.name} (pyogrio)",
                     )
                 raise st_read_error
 
@@ -249,7 +249,7 @@ class ZipShapefilePlugin(SourcePlugin):
             self._log(error_msg, on_log)
             return ExtractResult(success=False, message=error_msg)
 
-    def _read_with_geopandas(
+    def _read_with_pyogrio(
         self,
         conn: duckdb.DuckDBPyConnection,
         shp_path: Path,
@@ -258,43 +258,42 @@ class ZipShapefilePlugin(SourcePlugin):
         on_log: Callable[[str], None] | None = None,
         on_progress: Callable[[float, str], None] | None = None,
     ) -> int | None:
-        """Läs Shapefile med geopandas (fallback för encoding-problem).
+        """Läs Shapefile med pyogrio (fallback för encoding-problem).
 
         Returns:
             Antal rader eller None vid fel.
         """
         try:
-            # Lazy import - geopandas laddas bara när det behövs
-            import geopandas as gpd
+            import pyogrio
 
-            self._log(f"Läser med geopandas (encoding={encoding})...", on_log)
-            self._progress(0.7, "Läser med geopandas...", on_progress)
+            self._log(f"Läser med pyogrio (encoding={encoding})...", on_log)
+            self._progress(0.7, "Läser med pyogrio...", on_progress)
 
-            gdf = gpd.read_file(shp_path, encoding=encoding)
+            meta, table = pyogrio.read_arrow(str(shp_path), encoding=encoding)
 
-            self._log("Sparar till GeoParquet...", on_log)
-            self._progress(0.8, "Sparar till GeoParquet...", on_progress)
-
-            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                parquet_path = tmp.name
-
-            gdf.to_parquet(parquet_path)
+            # Hitta geometrikolumn
+            geom_cols = meta.get("geometry_columns", [])
+            geom_col = geom_cols[0] if geom_cols else "wkb_geometry"
 
             self._log("Laddar in i DuckDB...", on_log)
             self._progress(0.9, "Laddar in i DuckDB...", on_progress)
 
-            conn.execute(f"""
-                CREATE OR REPLACE TABLE raw.{table_name} AS
-                SELECT * FROM '{parquet_path}'
-            """)
+            conn.execute(f"DROP TABLE IF EXISTS raw.{table_name}")
+            conn.execute(
+                f"""
+                CREATE TABLE raw.{table_name} AS
+                SELECT
+                    * EXCLUDE ("{geom_col}"),
+                    ST_GeomFromWKB("{geom_col}") AS geom
+                FROM table
+            """
+            )
 
-            Path(parquet_path).unlink(missing_ok=True)
-
-            return len(gdf)
+            return table.num_rows
 
         except ImportError:
-            self._log("geopandas är inte installerat - kan inte använda fallback", on_log)
+            self._log("pyogrio är inte installerat - kan inte använda fallback", on_log)
             return None
         except Exception as e:
-            self._log(f"Geopandas-fallback misslyckades: {e}", on_log)
+            self._log(f"Pyogrio-fallback misslyckades: {e}", on_log)
             return None

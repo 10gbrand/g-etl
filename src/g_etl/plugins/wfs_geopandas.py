@@ -1,11 +1,11 @@
-"""WFS-plugin med GeoPandas för bättre felhantering av trasiga WFS-servrar."""
+"""WFS-plugin med PyOGRIO för snabb och lättviktig WFS-hämtning."""
 
 from collections.abc import Callable
 from urllib.parse import urlencode
 
 import duckdb
-import geopandas as gpd
-import pandas as pd
+import pyarrow as pa
+import pyogrio
 import requests
 
 from g_etl.plugins.base import ExtractResult, SourcePlugin
@@ -13,11 +13,12 @@ from g_etl.plugins.base import ExtractResult, SourcePlugin
 
 class WfsGeopandasPlugin(SourcePlugin):
     """
-    Plugin för WFS med GeoPandas-baserad hämtning.
+    Plugin för WFS med PyOGRIO-baserad hämtning.
 
     Fördelar vs standard WFS-plugin:
+    - Mycket snabbare (PyOGRIO använder GDAL direkt)
+    - Lättviktare (Arrow-baserat, ingen geopandas/pandas-dependency)
     - Bättre felhantering för trasiga WFS-servrar
-    - Kan reparera trasigt JSON
     - Robustare paginering
     - Retry-logik
     """
@@ -33,7 +34,7 @@ class WfsGeopandasPlugin(SourcePlugin):
         on_log: Callable[[str], None] | None = None,
         on_progress: Callable[[float, str], None] | None = None,
     ) -> ExtractResult:
-        """Hämtar data från WFS med GeoPandas.
+        """Hämtar data från WFS med PyOGRIO.
 
         Config-parametrar:
             url: WFS-tjänstens bas-URL
@@ -55,12 +56,13 @@ class WfsGeopandasPlugin(SourcePlugin):
                 message="Saknar url, layer eller id i config",
             )
 
-        self._log(f"Hämtar {layer} från {url} med GeoPandas...", on_log)
+        self._log(f"Hämtar {layer} från {url} med PyOGRIO...", on_log)
         self._progress(0.1, f"Hämtar från WFS: {layer}...", on_progress)
 
         try:
-            # Hämta data i chunks
-            all_gdfs = []
+            # Hämta data i chunks (Arrow-tabeller)
+            all_tables = []
+            geom_col_name = None
             start_index = 0
             chunk_num = 0
             total_rows = 0
@@ -90,16 +92,21 @@ class WfsGeopandasPlugin(SourcePlugin):
                 )
 
                 try:
-                    # Försök läsa med GeoPandas (mer robust än GDAL)
-                    gdf = gpd.read_file(wfs_url)
+                    # Läs med PyOGRIO som Arrow-tabell (ingen geopandas behövs)
+                    meta, table = pyogrio.read_arrow(wfs_url)
 
-                    if gdf.empty:
+                    if table.num_rows == 0:
                         self._log("Inga fler features", on_log)
                         break
 
-                    chunk_rows = len(gdf)
+                    # Spara geometrikolumnens namn från metadata
+                    if geom_col_name is None:
+                        geom_cols = meta.get("geometry_columns", [])
+                        geom_col_name = geom_cols[0] if geom_cols else "wkb_geometry"
+
+                    chunk_rows = table.num_rows
                     total_rows += chunk_rows
-                    all_gdfs.append(gdf)
+                    all_tables.append(table)
 
                     self._log(
                         f"Chunk {chunk_num}: +{chunk_rows} rader (totalt {total_rows})",
@@ -125,37 +132,30 @@ class WfsGeopandasPlugin(SourcePlugin):
                         # Senare chunk - fortsätt med vad vi har
                         break
 
-            if not all_gdfs:
+            if not all_tables:
                 return ExtractResult(
                     success=False,
                     message="Inga features hämtades",
                 )
 
             # Slå ihop alla chunks
-            self._log(f"Slår ihop {len(all_gdfs)} chunks...", on_log)
-            combined_gdf = gpd.GeoDataFrame(
-                pd.concat(all_gdfs, ignore_index=True), crs=all_gdfs[0].crs
-            )
+            self._log(f"Slår ihop {len(all_tables)} chunks...", on_log)
+            combined = pa.concat_tables(all_tables)  # noqa: F841 (refereras i SQL)
 
-            # Konvertera till DuckDB
+            # Ladda till DuckDB (geometri är WKB från pyogrio)
             self._log("Laddar till DuckDB...", on_log)
             self._progress(0.8, "Laddar till DuckDB...", on_progress)
 
-            # Exportera geometri som WKT
-            combined_gdf["geom_wkt"] = combined_gdf.geometry.to_wkt()
-
-            # Ta bort geometry-kolumnen (DuckDB kan inte hantera Shapely direkt)
-            combined_gdf = combined_gdf.drop(columns=["geometry"])
-
-            # Ladda till DuckDB
             conn.execute(f"DROP TABLE IF EXISTS raw.{table_name}")
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 CREATE TABLE raw.{table_name} AS
                 SELECT
-                    * EXCLUDE (geom_wkt),
-                    ST_GeomFromText(geom_wkt) AS geom
-                FROM df
-            """)
+                    * EXCLUDE ("{geom_col_name}"),
+                    ST_GeomFromWKB("{geom_col_name}") AS geom
+                FROM combined
+            """
+            )
 
             self._log(f"Hämtade {total_rows} rader till raw.{table_name}", on_log)
             self._progress(1.0, f"Hämtade {total_rows} rader", on_progress)

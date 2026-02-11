@@ -1,6 +1,5 @@
 """Plugin for reading GeoPackage files directly (uncompressed) from URL or local file."""
 
-import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -130,19 +129,17 @@ class GeoPackagePlugin(SourcePlugin):
                     SELECT * FROM {read_expr}
                 """)
             except Exception as st_read_error:
-                # Fallback: Use geopandas for complex geometries
+                # Fallback: Use pyogrio for complex geometries
                 if "MULTISURFACE" in str(st_read_error) or "not supported" in str(st_read_error):
-                    self._log("ST_Read failed, using geopandas...", on_log)
-                    rows_count = self._read_with_geopandas(
-                        conn, gpkg_path, table_name, layer, on_log
-                    )
+                    self._log("ST_Read failed, using pyogrio...", on_log)
+                    rows_count = self._read_with_pyogrio(conn, gpkg_path, table_name, layer, on_log)
                     if rows_count is not None:
                         self._log(f"Read {rows_count} rows to raw.{table_name}", on_log)
                         self._progress(1.0, f"Read {rows_count} rows", on_progress)
                         return ExtractResult(
                             success=True,
                             rows_count=rows_count,
-                            message=f"Read {rows_count} rows from {gpkg_path.name} (geopandas)",
+                            message=f"Read {rows_count} rows from {gpkg_path.name} (pyogrio)",
                         )
                 raise
 
@@ -201,7 +198,7 @@ class GeoPackagePlugin(SourcePlugin):
             _download_cache[url] = str(local_path)
             return local_path
 
-    def _read_with_geopandas(
+    def _read_with_pyogrio(
         self,
         conn: duckdb.DuckDBPyConnection,
         gpkg_path: Path,
@@ -209,40 +206,51 @@ class GeoPackagePlugin(SourcePlugin):
         layer: str | None,
         on_log: Callable[[str], None] | None = None,
     ) -> int | None:
-        """Read GeoPackage with geopandas (fallback for complex geometries).
+        """Read GeoPackage with pyogrio (fallback for complex geometries).
 
         Returns:
             Row count or None on error.
         """
         try:
-            import geopandas as gpd
+            import pyarrow as pa
+            import pyogrio
+            import shapely
 
+            kwargs = {}
             if layer:
-                gdf = gpd.read_file(gpkg_path, layer=layer)
-            else:
-                gdf = gpd.read_file(gpkg_path)
+                kwargs["layer"] = layer
+            meta, table = pyogrio.read_arrow(str(gpkg_path), **kwargs)
 
-            # Convert complex geometry types
-            if "geometry" in gdf.columns:
-                gdf["geometry"] = gdf["geometry"].apply(
-                    lambda g: g if g is None else self._simplify_geometry(g)
-                )
+            # Hitta geometrikolumn
+            geom_cols = meta.get("geometry_columns", [])
+            geom_col = geom_cols[0] if geom_cols else "wkb_geometry"
 
-            # Load to DuckDB via temporary parquet
-            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                tmp_path = tmp.name
+            # Konvertera komplexa geometrier via shapely
+            wkb_array = table.column(geom_col).to_pylist()
+            geoms = shapely.from_wkb(wkb_array)
 
-            gdf.to_parquet(tmp_path)
-            conn.execute(f"""
-                CREATE OR REPLACE TABLE raw.{table_name} AS
-                SELECT * FROM read_parquet('{tmp_path}')
-            """)
-            Path(tmp_path).unlink(missing_ok=True)
+            simplified = shapely.to_wkb(
+                [self._simplify_geometry(g) if g is not None else None for g in geoms]
+            )
 
-            return len(gdf)
+            col_idx = table.schema.get_field_index(geom_col)
+            table = table.set_column(col_idx, geom_col, pa.array(simplified, type=pa.binary()))
+
+            conn.execute(f"DROP TABLE IF EXISTS raw.{table_name}")
+            conn.execute(
+                f"""
+                CREATE TABLE raw.{table_name} AS
+                SELECT
+                    * EXCLUDE ("{geom_col}"),
+                    ST_GeomFromWKB("{geom_col}") AS geom
+                FROM table
+            """
+            )
+
+            return table.num_rows
 
         except Exception as e:
-            self._log(f"Geopandas fallback failed: {e}", on_log)
+            self._log(f"Pyogrio fallback failed: {e}", on_log)
             return None
 
     def _simplify_geometry(self, geom):

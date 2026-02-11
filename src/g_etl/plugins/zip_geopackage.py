@@ -220,19 +220,17 @@ class ZipGeoPackagePlugin(SourcePlugin):
                     SELECT * FROM {read_expr}
                 """)
             except Exception as st_read_error:
-                # Fallback: Använd geopandas för komplexa geometrier (MULTISURFACE etc)
+                # Fallback: Använd pyogrio för komplexa geometrier (MULTISURFACE etc)
                 if "MULTISURFACE" in str(st_read_error) or "not supported" in str(st_read_error):
-                    self._log("ST_Read misslyckades, använder geopandas...", on_log)
-                    rows_count = self._read_with_geopandas(
-                        conn, gpkg_path, table_name, layer, on_log
-                    )
+                    self._log("ST_Read misslyckades, använder pyogrio...", on_log)
+                    rows_count = self._read_with_pyogrio(conn, gpkg_path, table_name, layer, on_log)
                     if rows_count is not None:
                         self._log(f"Läste {rows_count} rader till raw.{table_name}", on_log)
                         self._progress(1.0, f"Läste {rows_count} rader", on_progress)
                         return ExtractResult(
                             success=True,
                             rows_count=rows_count,
-                            message=f"Läste {rows_count} rader från {gpkg_path.name} (geopandas)",
+                            message=f"Läste {rows_count} rader från {gpkg_path.name} (pyogrio)",
                         )
                 raise  # Kasta vidare om det inte var geometri-problem
 
@@ -263,7 +261,7 @@ class ZipGeoPackagePlugin(SourcePlugin):
             self._log(error_msg, on_log)
             return ExtractResult(success=False, message=error_msg)
 
-    def _read_with_geopandas(
+    def _read_with_pyogrio(
         self,
         conn: duckdb.DuckDBPyConnection,
         gpkg_path: Path,
@@ -271,44 +269,57 @@ class ZipGeoPackagePlugin(SourcePlugin):
         layer: str | None,
         on_log: Callable[[str], None] | None = None,
     ) -> int | None:
-        """Läs GeoPackage med geopandas (fallback för komplexa geometrier).
+        """Läs GeoPackage med pyogrio (fallback för komplexa geometrier).
 
-        Konverterar MULTISURFACE till MULTIPOLYGON etc.
+        Konverterar MULTISURFACE till MULTIPOLYGON etc. via shapely.
 
         Returns:
             Antal rader eller None vid fel.
         """
         try:
-            import geopandas as gpd
+            import pyarrow as pa
+            import pyogrio
+            import shapely
 
-            # Läs med geopandas
+            # Läs med pyogrio som Arrow-tabell
+            kwargs = {}
             if layer:
-                gdf = gpd.read_file(gpkg_path, layer=layer)
-            else:
-                gdf = gpd.read_file(gpkg_path)
+                kwargs["layer"] = layer
+            meta, table = pyogrio.read_arrow(str(gpkg_path), **kwargs)
 
-            # Konvertera geometrier om de är komplexa typer
-            if "geometry" in gdf.columns:
-                # Försök konvertera MULTISURFACE till MULTIPOLYGON
-                gdf["geometry"] = gdf["geometry"].apply(
-                    lambda g: g if g is None else self._simplify_geometry(g)
-                )
+            # Hitta geometrikolumn
+            geom_cols = meta.get("geometry_columns", [])
+            geom_col = geom_cols[0] if geom_cols else "wkb_geometry"
 
-            # Ladda till DuckDB via temporär parquet
-            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
-                tmp_path = tmp.name
+            # Konvertera komplexa geometrier via shapely
+            wkb_array = table.column(geom_col).to_pylist()
+            geoms = shapely.from_wkb(wkb_array)
 
-            gdf.to_parquet(tmp_path)
-            conn.execute(f"""
-                CREATE OR REPLACE TABLE raw.{table_name} AS
-                SELECT * FROM read_parquet('{tmp_path}')
-            """)
-            Path(tmp_path).unlink(missing_ok=True)
+            # Förenkla komplexa typer (MULTISURFACE → MULTIPOLYGON etc.)
+            simplified = shapely.to_wkb(
+                [self._simplify_geometry(g) if g is not None else None for g in geoms]
+            )
 
-            return len(gdf)
+            # Ersätt geometrikolumnen med förenklade WKB-geometrier
+            col_idx = table.schema.get_field_index(geom_col)
+            table = table.set_column(col_idx, geom_col, pa.array(simplified, type=pa.binary()))
+
+            # Ladda till DuckDB
+            conn.execute(f"DROP TABLE IF EXISTS raw.{table_name}")
+            conn.execute(
+                f"""
+                CREATE TABLE raw.{table_name} AS
+                SELECT
+                    * EXCLUDE ("{geom_col}"),
+                    ST_GeomFromWKB("{geom_col}") AS geom
+                FROM table
+            """
+            )
+
+            return table.num_rows
 
         except Exception as e:
-            self._log(f"Geopandas-fallback misslyckades: {e}", on_log)
+            self._log(f"Pyogrio-fallback misslyckades: {e}", on_log)
             return None
 
     def _simplify_geometry(self, geom):
@@ -319,7 +330,6 @@ class ZipGeoPackagePlugin(SourcePlugin):
 
         # MULTISURFACE -> MULTIPOLYGON
         if geom_type in ("MultiSurface", "CurvePolygon", "CompoundCurve"):
-            # Försök konvertera till polygon via buffer(0)
             try:
                 simplified = geom.buffer(0)
                 if simplified.geom_type == "Polygon":
