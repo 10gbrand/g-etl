@@ -58,6 +58,8 @@ RUN python -m nuitka \
     --nofollow-import-to=scipy \
     --nofollow-import-to=matplotlib \
     --nofollow-import-to=PIL \
+    --nofollow-import-to=contextily \
+    --nofollow-import-to=rich_pixels \
     --nofollow-import-to=cv2 \
     --nofollow-import-to=torch \
     --nofollow-import-to=tensorflow \

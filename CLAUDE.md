@@ -107,24 +107,25 @@ Extract (parallellt):
 └── dataset3 → parquet
 
 Transform (parallellt, en temp-DB per dataset):
-├── dataset1.duckdb: init(001-003) → raw → staging_004 → staging_005 → mart
-├── dataset2.duckdb: init(001-003) → raw → staging_004 → staging_005 → mart
-└── dataset3.duckdb: init(001-003) → raw → staging_004 → staging_005 → mart
+├── dataset1.duckdb: init(001-003) → raw → staging_004 → [pipeline-templates] → mart
+├── dataset2.duckdb: init(001-003) → raw → staging_004 → [pipeline-templates] → mart
+└── dataset3.duckdb: init(001-003) → raw → staging_004 → [pipeline-templates] → mart
 
 Merge:
-└── warehouse.duckdb ← alla temp-DBs
+└── warehouse.duckdb ← alla temp-DBs (raw + mart)
 
 Post-merge:
-└── Kör *_merged.sql (aggregeringar över alla datasets)
+├── Pipeline-merged (*_merged.sql per pipeline-katalog)
+└── Post-pipeline (x*.sql i roten)
 ```
 
 **Dataflöde genom DuckDB-scheman:**
 - `raw/` - Rå ingesterad data från plugins
-- `staging_004/` - Validering, metadata och H3-indexering (SQL)
-- `staging_005/` - Normaliserade dataset med enhetlig struktur (SQL)
+- `staging_004/` - Validering, metadata och H3-indexering (delad staging)
+- `staging_{pipeline}_{NNN}/` - Pipeline-specifika staging-scheman (t.ex. `staging_ext_restr_001`)
 - `mart/` - Aggregerade tabeller (SQL)
 
-OBS: Staging-scheman skapas dynamiskt baserat på SQL-filens nummer (NNN i `NNN_staging_*.sql`).
+OBS: Staging-scheman skapas dynamiskt. Root-templates genererar `staging_NNN`, pipeline-templates genererar `staging_{pipeline}_{NNN}`.
 
 **Nyckelkomponenter:**
 
@@ -140,6 +141,13 @@ OBS: Staging-scheman skapas dynamiskt baserat på SQL-filens nummer (NNN i `NNN_
 - `config/datasets.yml` - Dataset-konfiguration med plugin-parametrar
 - `src/g_etl/settings.py` - Centrala inställningar (H3-resolution, CRS, parallelism)
 
+**Heatmap-visualisering (optional):**
+
+Data Explorer i TUI:n stödjer heatmap-rendering med bakgrundskarta.
+Installera `uv sync --extra viz` för att aktivera (matplotlib, contextily, rich-pixels, Pillow).
+Tangent `h` i Explorer-skärmen växlar mellan braille-karta och heatmap.
+Pipeline: DuckDB → matplotlib hexbin + contextily basemap → PNG → rich-pixels halfblock → Textual.
+
 **Auto-detekterad parallelism (settings.py):**
 
 ```python
@@ -152,31 +160,50 @@ MAX_CONCURRENT_SQL       # = cpu_count() // 2 för CPU-bound SQL (DuckDB paralle
 Pipeline:n integrerar med migreringssystemet för att spåra körda SQL-filer:
 
 - **Statiska migrationer (001-003)**: Spåras som `001`, `002`, `003` i `_migrations`
-- **Template-migrationer (004+)**: Spåras per dataset som `004:dataset_id`, `005:dataset_id`, etc.
+- **Root-template-migrationer (004+)**: Spåras per dataset som `004:dataset_id`
+- **Pipeline-template-migrationer**: Spåras som `aab_ext_restr/001:dataset_id`
 
 När en template redan är körd för ett dataset hoppas den över (om inte `force=True`).
 
-**SQL-struktur:**
-
-Alla SQL-filer samlade i `sql/migrations/` med namnmönstret `{NNN}_{beskrivning}_template.sql`:
+**SQL-struktur (multi-pipeline):**
 
 ```text
 sql/migrations/
-├── 001_db_extensions.sql                    # Installerar DuckDB extensions (körs vid init)
-├── 002_db_schemas.sql                       # Skapar bas-scheman raw, mart (körs vid init)
-├── 003_db_makros.sql                        # SQL-makron (körs vid init)
-├── 004_staging_transform_template.sql       # staging_004: validering, MD5, H3-index
-├── 005_staging_normalisering_template.sql   # staging_005: normaliserad struktur
-├── 006_mart_h3_cells_template.sql           # mart: exploderade H3-celler med geometri
-└── 007_mart_compact_h3_cells_template.sql   # mart: kompakterade H3-celler
+├── 001_db_extensions.sql                    # Init: DuckDB extensions
+├── 002_db_schemas.sql                       # Init: bas-scheman raw, mart
+├── 003_db_makros.sql                        # Init: SQL-makron
+├── 004_staging_transform_template.sql       # Delad staging (alla datasets)
+├── aaa_avdelning/                           # Pipeline "avdelning"
+│   ├── 001_*_template.sql                   # Pipeline-specifika templates
+│   └── 100_*_merged.sql                     # Pipeline-merged SQL
+├── aab_ext_restr/                           # Pipeline "ext_restr"
+│   ├── 001_staging_normalisering_template.sql
+│   ├── 002_mart_h3_cells_template.sql
+│   ├── 003_mart_compact_h3_cells_template.sql
+│   └── 100_mart_h3_index_merged.sql
+├── x01_*.sql                                # Post-pipeline (efter alla merges)
+└── x02_*.sql
 ```
+
+**Exekveringsordning per dataset:**
+1. Init (001-003) → extensions, scheman, makron
+2. Delad staging (004) → `staging_004`
+3. Pipeline-templates → pipeline-specifika scheman
+4. Merge → kopiera raw + mart till warehouse
+5. Pipeline-merged → `*_merged.sql` per pipeline-katalog
+6. Post-pipeline → `x*.sql` i roten (sist)
+
+**Multi-pipeline:**
+
+Varje dataset tillhör exakt en pipeline via `pipeline:`-fältet i `datasets.yml`.
+Pipeline-kataloger namnges `{prefix}_{pipeline}` där prefix (t.ex. `aaa`, `aab`) styr körordning.
 
 **Dynamiska staging-scheman:**
 
-Schemanamnet genereras från SQL-filens nummer (NNN):
-- `004_staging_*.sql` → schema `staging_004`
-- `005_staging_*.sql` → schema `staging_005`
-- `NNN_mart_*.sql` → schema `mart`
+Schemanamnet genereras från SQL-filens nummer och pipeline:
+- Root: `004_staging_*.sql` → schema `staging_004`
+- Pipeline: `001_staging_*.sql` (ext_restr) → schema `staging_ext_restr_001`
+- `NNN_mart_*.sql` → schema `mart` (alltid)
 
 **SQL-mallar (generiskt system):**
 
@@ -197,23 +224,17 @@ SELECT * FROM {{ prev_schema }}.{{ dataset_id }}
 WHERE '{{ klass }}' = 'naturreservat';
 ```
 
-**Post-merge SQL (`*_merged.sql`):**
+**Post-merge SQL (`*_merged.sql` och `x*.sql`):**
 
-Filer med suffix `_merged.sql` körs EFTER att alla datasets slagits ihop till warehouse.
-Använd detta för aggregeringar över alla datasets:
-
-```sql
--- 100_all_h3_cells_merged.sql
-CREATE OR REPLACE TABLE mart.all_h3_cells AS
-SELECT * FROM mart.naturreservat
-UNION ALL SELECT * FROM mart.biotopskyddsomraden
-UNION ALL SELECT * FROM mart.vattenskyddsomraden;
-```
+Tre typer av post-merge SQL körs i ordning:
+1. **Pipeline-merged** (`aab_ext_restr/100_merged.sql`): Per pipeline-katalog
+2. **Root-merged** (`100_merged.sql`): Root-nivå (bakåtkompatibilitet)
+3. **Post-pipeline** (`x01_*.sql`): Globala aggregeringar, körs sist
 
 **Tillgängliga variabler:**
 
-- `{{ schema }}` - Aktuellt schema (t.ex. `staging_004`, `mart`)
-- `{{ prev_schema }}` - Föregående schema (t.ex. `raw`, `staging_004`)
+- `{{ schema }}` - Aktuellt schema (t.ex. `staging_004`, `staging_ext_restr_001`, `mart`)
+- `{{ prev_schema }}` - Föregående schema (t.ex. `raw`, `staging_004`, `staging_ext_restr_001`)
 - `{{ dataset_id }}` - Dataset-ID
 - `{{ source_id_column }}` - Kolumn för käll-ID
 - `{{ klass }}`, `{{ leverantor }}` - Från field_mapping (literaler)
@@ -223,6 +244,7 @@ UNION ALL SELECT * FROM mart.vattenskyddsomraden;
 **field_mapping syntax i datasets.yml:**
 
 ```yaml
+pipeline: ext_restr            # Pipeline (matchar underkatalog, t.ex. aab_ext_restr/)
 field_mapping:
   source_id_column: $beteckn   # $prefix = kolumnreferens
   klass: biotopskydd           # utan prefix = literal sträng

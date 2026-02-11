@@ -27,7 +27,13 @@ g-etl = "g_etl.admin.app:main"
 [project.optional-dependencies]
 dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]
 build = ["pyinstaller>=6.0.0"]
-viz = ["folium>=0.17.0"]
+viz = [
+    "folium>=0.17.0",
+    "matplotlib>=3.8.0",
+    "contextily>=1.6.0",
+    "rich-pixels>=3.0.0",
+    "Pillow>=10.0.0",
+]
 
 [dependency-groups]
 dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]

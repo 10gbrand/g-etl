@@ -44,20 +44,20 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     # Visa statiska migrationer
     print("=== Statiska migrationer ===")
-    print(f"{'Version':<10} {'Namn':<40} {'Status':<10} {'Down'}")
-    print("-" * 70)
+    print(f"{'Version':<25} {'Namn':<40} {'Status':<10} {'Down'}")
+    print("-" * 85)
 
     for m in static_migrations:
         status_icon = "✓" if m.status == MigrationStatus.APPLIED else "○"
         down_icon = "✓" if m.down_sql else "-"
-        print(f"{m.version:<10} {m.name:<40} {status_icon:<10} {down_icon}")
+        print(f"{m.version:<25} {m.name:<40} {status_icon:<10} {down_icon}")
 
     # Visa template-migrationer
     if template_migrations:
         print()
         print("=== Template-migrationer (körs per dataset) ===")
-        print(f"{'Version':<10} {'Namn':<40} {'Datasets körda'}")
-        print("-" * 70)
+        print(f"{'Version':<25} {'Namn':<40} {'Datasets körda'}")
+        print("-" * 85)
 
         for m in template_migrations:
             # Hämta antal körda datasets för denna template
@@ -70,7 +70,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             except Exception:
                 count = 0
 
-            print(f"{m.version:<10} {m.name:<40} {count}")
+            print(f"{m.version:<25} {m.name:<40} {count}")
 
     # Sammanfattning
     pending_static = [m for m in static_migrations if m.status == MigrationStatus.PENDING]

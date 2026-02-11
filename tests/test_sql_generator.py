@@ -1,8 +1,14 @@
-"""Tester för scripts/sql_generator.py."""
+"""Tester för sql_generator.py med multi-pipeline-stöd."""
 
 import pytest
 
-from g_etl.sql_generator import DatasetConfig, SQLGenerator, get_generator, list_templates
+from g_etl.sql_generator import (
+    DatasetConfig,
+    SQLGenerator,
+    TemplateInfo,
+    get_generator,
+    list_templates,
+)
 
 
 class TestDatasetConfig:
@@ -12,6 +18,7 @@ class TestDatasetConfig:
         """Kontrollera default-värden."""
         config = DatasetConfig()
         assert config.dataset_id == ""
+        assert config.pipeline == ""
         assert config.geometry_column == "geom"
         assert config.h3_center_resolution == 13
         assert config.h3_polyfill_resolution == 11
@@ -29,6 +36,20 @@ class TestDatasetConfig:
         assert config.grupp == "$kategori"
         assert config.typ == "test_typ"
         assert config.leverantor == "test_leverantor"
+
+    def test_from_dataset_yml_with_pipeline(self):
+        """Testa skapande med pipeline-fält."""
+        yml_config = {
+            "pipeline": "ext_restr",
+            "field_mapping": {"klass": "test"},
+        }
+        config = DatasetConfig.from_dataset_yml("test", yml_config)
+        assert config.pipeline == "ext_restr"
+
+    def test_from_dataset_yml_without_pipeline(self):
+        """Testa att pipeline default till tom sträng."""
+        config = DatasetConfig.from_dataset_yml("test", {"id": "test"})
+        assert config.pipeline == ""
 
     def test_from_dataset_yml_missing_field_mapping(self):
         """Testa med saknad field_mapping."""
@@ -77,16 +98,18 @@ DROP TABLE IF EXISTS staging.{{ dataset_id }};
         return temp_dir
 
     def test_list_templates(self, generator):
-        """Testa att list_templates returnerar templates."""
+        """Testa att list_templates returnerar TemplateInfo-objekt."""
         templates = generator.list_templates()
-        # Projektet har templates, kontrollera att listan inte är tom
         assert isinstance(templates, list)
+        if templates:
+            assert isinstance(templates[0], TemplateInfo)
 
     def test_list_templates_sorted(self, generator):
-        """Testa att templates är sorterade."""
+        """Testa att templates är sorterade efter relative_path."""
         templates = generator.list_templates()
         if len(templates) > 1:
-            assert templates == sorted(templates)
+            paths = [t.relative_path for t in templates]
+            assert paths == sorted(paths)
 
     def test_is_column_ref_with_dollar(self, generator):
         """Testa identifiering av kolumnreferens med $."""
@@ -196,6 +219,180 @@ DROP TABLE IF EXISTS staging.{{ dataset_id }};
         assert results[1][0] == "005_second_template.sql"
 
 
+class TestSQLGeneratorPipeline:
+    """Tester för multi-pipeline-stöd."""
+
+    @pytest.fixture
+    def pipeline_sql_dir(self, temp_dir):
+        """Skapa SQL-katalog med pipeline-underkataloger."""
+        migrations_dir = temp_dir / "migrations"
+        migrations_dir.mkdir()
+
+        # Root-template
+        (migrations_dir / "004_staging_transform_template.sql").write_text(
+            "-- migrate:up\n"
+            "CREATE TABLE {{ schema }}.{{ dataset_id }} AS\n"
+            "SELECT * FROM {{ prev_schema }}.{{ dataset_id }};\n"
+            "-- migrate:down\n"
+        )
+
+        # Pipeline-underkatalog
+        pipeline_dir = migrations_dir / "aab_ext_restr"
+        pipeline_dir.mkdir()
+        (pipeline_dir / "001_staging_normalisering_template.sql").write_text(
+            "-- migrate:up\n"
+            "CREATE TABLE {{ schema }}.{{ dataset_id }} AS\n"
+            "SELECT * FROM {{ prev_schema }}.{{ dataset_id }};\n"
+            "-- migrate:down\n"
+        )
+        (pipeline_dir / "002_mart_h3_cells_template.sql").write_text(
+            "-- migrate:up\n"
+            "CREATE TABLE {{ schema }}.{{ dataset_id }}_h3 AS\n"
+            "SELECT * FROM {{ prev_schema }}.{{ dataset_id }};\n"
+            "-- migrate:down\n"
+        )
+        (pipeline_dir / "100_mart_h3_index_merged.sql").write_text(
+            "-- Merged SQL (inte template)\n"
+        )
+
+        return temp_dir
+
+    def test_dir_to_pipeline_name(self):
+        """Testa strippning av ordningsprefix."""
+        gen = SQLGenerator()
+        assert gen._dir_to_pipeline_name("aab_ext_restr") == "ext_restr"
+        assert gen._dir_to_pipeline_name("aaa_avdelning") == "avdelning"
+        assert gen._dir_to_pipeline_name("abc_test") == "test"
+        # Utan 3-bokstavsprefix behålls hela namnet
+        assert gen._dir_to_pipeline_name("12_test") == "12_test"
+
+    def test_pipeline_name_to_dir(self, pipeline_sql_dir):
+        """Testa omvänd mappning pipeline → katalog."""
+        gen = SQLGenerator(sql_path=pipeline_sql_dir)
+        assert gen._pipeline_name_to_dir("ext_restr") == "aab_ext_restr"
+        assert gen._pipeline_name_to_dir("nonexistent") is None
+
+    def test_list_pipeline_dirs(self, pipeline_sql_dir):
+        """Testa listning av pipeline-kataloger."""
+        gen = SQLGenerator(sql_path=pipeline_sql_dir)
+        dirs = gen.list_pipeline_dirs()
+        assert len(dirs) == 1
+        assert dirs[0] == ("aab_ext_restr", "ext_restr")
+
+    def test_list_templates_without_pipeline(self, pipeline_sql_dir):
+        """Utan pipeline returneras bara root-templates."""
+        gen = SQLGenerator(sql_path=pipeline_sql_dir)
+        templates = gen.list_templates()
+        assert len(templates) == 1
+        assert templates[0].filename == "004_staging_transform_template.sql"
+        assert templates[0].pipeline is None
+
+    def test_list_templates_with_pipeline(self, pipeline_sql_dir):
+        """Med pipeline returneras root + pipeline-templates."""
+        gen = SQLGenerator(sql_path=pipeline_sql_dir)
+        templates = gen.list_templates(pipeline="ext_restr")
+        assert len(templates) == 3  # 1 root + 2 pipeline (merged exkluderas)
+        assert templates[0].pipeline is None
+        assert templates[1].pipeline == "ext_restr"
+        assert templates[1].filename == "001_staging_normalisering_template.sql"
+        assert templates[1].relative_path == "aab_ext_restr/001_staging_normalisering_template.sql"
+        assert templates[2].pipeline == "ext_restr"
+
+    def test_schema_name_root(self):
+        """Testa schema-generering för root-templates."""
+        gen = SQLGenerator()
+        assert gen._get_schema_name("004_staging_transform_template.sql") == "staging_004"
+        assert gen._get_schema_name("006_mart_h3_cells_template.sql") == "mart"
+
+    def test_schema_name_with_pipeline(self):
+        """Testa pipeline-scopade scheman."""
+        gen = SQLGenerator()
+        assert (
+            gen._get_schema_name("001_staging_normalisering_template.sql", pipeline="ext_restr")
+            == "staging_ext_restr_001"
+        )
+        assert (
+            gen._get_schema_name("002_mart_h3_cells_template.sql", pipeline="ext_restr") == "mart"
+        )
+
+    def test_prev_schema_root(self):
+        """Testa prev_schema för root-templates."""
+        gen = SQLGenerator()
+        assert gen._get_prev_schema_name("004_staging_transform_template.sql") == "raw"
+
+    def test_prev_schema_pipeline_boundary(self):
+        """Testa att första pipeline-template refererar till staging_004."""
+        gen = SQLGenerator()
+        assert (
+            gen._get_prev_schema_name(
+                "001_staging_normalisering_template.sql", pipeline="ext_restr"
+            )
+            == "staging_004"
+        )
+
+    def test_prev_schema_within_pipeline(self):
+        """Testa kedjning inom pipeline."""
+        gen = SQLGenerator()
+        assert (
+            gen._get_prev_schema_name("002_staging_something_template.sql", pipeline="ext_restr")
+            == "staging_ext_restr_001"
+        )
+
+    def test_prev_schema_mart_in_pipeline(self):
+        """Testa att mart refererar till sista staging i pipelinen."""
+        gen = SQLGenerator()
+        templates = [
+            TemplateInfo(
+                "004_staging_transform_template.sql",
+                "004_staging_transform_template.sql",
+                None,
+                None,
+                "004",
+            ),
+            TemplateInfo(
+                "001_staging_norm_template.sql",
+                "aab_ext_restr/001_staging_norm_template.sql",
+                "ext_restr",
+                "aab_ext_restr",
+                "001",
+            ),
+            TemplateInfo(
+                "002_mart_h3_template.sql",
+                "aab_ext_restr/002_mart_h3_template.sql",
+                "ext_restr",
+                "aab_ext_restr",
+                "002",
+            ),
+        ]
+        prev = gen._get_prev_schema_name(
+            "002_mart_h3_template.sql",
+            pipeline="ext_restr",
+            pipeline_templates=templates,
+        )
+        assert prev == "staging_ext_restr_001"
+
+    def test_render_template_from_subdirectory(self, pipeline_sql_dir):
+        """Testa rendering av template från pipeline-katalog."""
+        gen = SQLGenerator(sql_path=pipeline_sql_dir)
+        sql = gen.render_template(
+            "aab_ext_restr/001_staging_normalisering_template.sql",
+            "naturreservat",
+            {"field_mapping": {}},
+            pipeline="ext_restr",
+        )
+        assert "staging_ext_restr_001" in sql
+        assert "staging_004" in sql  # prev_schema
+        assert "naturreservat" in sql
+
+    def test_get_schema_create_sql_with_pipeline(self):
+        """Testa CREATE SCHEMA för pipeline-template."""
+        gen = SQLGenerator()
+        sql = gen.get_schema_create_sql(
+            "001_staging_normalisering_template.sql", pipeline="ext_restr"
+        )
+        assert sql == "CREATE SCHEMA IF NOT EXISTS staging_ext_restr_001;"
+
+
 class TestSQLGeneratorBackwardsCompat:
     """Tester för bakåtkompatibla metoder."""
 
@@ -226,6 +423,8 @@ class TestModuleFunctions:
         """Testa list_templates-funktionen."""
         templates = list_templates()
         assert isinstance(templates, list)
+        if templates:
+            assert isinstance(templates[0], TemplateInfo)
 
 
 class TestSQLGeneratorEdgeCases:

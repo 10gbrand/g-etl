@@ -30,7 +30,7 @@ def duckdb_conn():
     # Skapa scheman
     conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
     conn.execute("CREATE SCHEMA IF NOT EXISTS staging")
-    conn.execute("CREATE SCHEMA IF NOT EXISTS staging_2")
+    conn.execute("CREATE SCHEMA IF NOT EXISTS staging_004")
     conn.execute("CREATE SCHEMA IF NOT EXISTS mart")
 
     yield conn

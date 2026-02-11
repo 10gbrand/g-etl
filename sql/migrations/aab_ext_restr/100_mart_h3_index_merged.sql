@@ -1,6 +1,7 @@
 -- Konsoliderad H3-index över ALLA datasets
+-- Pipeline: ext_restr (aab_ext_restr/100)
 -- Schema: mart
--- Källa: mart.*_h3 (exploderade H3-tabeller från 006_mart_h3_cells_template.sql)
+-- Källa: mart.*_h3 (exploderade H3-tabeller från 002_mart_h3_cells_template.sql)
 -- Skapar en central tabell med alla H3-celler från alla datasets
 -- Körs EFTER merge (post-merge SQL)
 --

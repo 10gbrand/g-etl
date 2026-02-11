@@ -118,6 +118,77 @@ OLAND_OUTLINE = [
 ]
 
 
+def load_centroids_from_query(
+    conn: duckdb.DuckDBPyConnection,
+    schema: str,
+    table: str,
+    geometry_column: str = "geometry",
+    sample_size: int = 50000,
+) -> list[tuple[float, float]]:
+    """Ladda geometri-centroids som (x, y) punkter i SWEREF99 TM.
+
+    Gemensam hjälpfunktion för alla kart-widgets.
+    Auto-detekterar koordinatsystem (WGS84 vs SWEREF99 TM).
+
+    Args:
+        conn: DuckDB-anslutning
+        schema: Databasschema
+        table: Tabellnamn
+        geometry_column: Namn på geometrikolumnen
+        sample_size: Max antal punkter att ladda
+
+    Returns:
+        Lista med (x, y) koordinater i SWEREF99 TM
+    """
+    # Kontrollera att tabellen finns
+    check_query = f"""
+        SELECT COUNT(*) FROM information_schema.tables
+        WHERE table_schema = '{schema}' AND table_name = '{table}'
+    """
+    result = conn.execute(check_query).fetchone()
+    if not result or result[0] == 0:
+        return []
+
+    # Kolla koordinatsystem
+    check_query = f"""
+        SELECT ST_X(ST_Centroid({geometry_column})) as x
+        FROM {schema}.{table}
+        WHERE {geometry_column} IS NOT NULL
+        LIMIT 1
+    """
+    sample_x = conn.execute(check_query).fetchone()
+    needs_transform = sample_x and sample_x[0] is not None and abs(sample_x[0]) < 180
+
+    if needs_transform:
+        geom = geometry_column
+        query = f"""
+            SELECT
+                ST_X(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as x,
+                ST_Y(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as y
+            FROM {schema}.{table}
+            WHERE {geom} IS NOT NULL
+            USING SAMPLE {sample_size}
+        """
+    else:
+        query = f"""
+            SELECT
+                ST_X(ST_Centroid({geometry_column})) as x,
+                ST_Y(ST_Centroid({geometry_column})) as y
+            FROM {schema}.{table}
+            WHERE {geometry_column} IS NOT NULL
+            USING SAMPLE {sample_size}
+        """
+
+    try:
+        rows = conn.execute(query).fetchall()
+        return [(float(x), float(y)) for x, y in rows if x is not None and y is not None]
+    except Exception:
+        # Fallback utan SAMPLE
+        query_simple = query.replace(f"USING SAMPLE {sample_size}", f"LIMIT {sample_size}")
+        rows = conn.execute(query_simple).fetchall()
+        return [(float(x), float(y)) for x, y in rows if x is not None and y is not None]
+
+
 @dataclass
 class MapStats:
     """Statistik för kartvisningen."""
@@ -184,78 +255,7 @@ class AsciiMapWidget(Static):
             geometry_column: Namn på geometrikolumnen
             sample_size: Max antal punkter att ladda (för prestanda)
         """
-        # Kontrollera att tabellen finns
-        check_query = f"""
-            SELECT COUNT(*) FROM information_schema.tables
-            WHERE table_schema = '{schema}' AND table_name = '{table}'
-        """
-        result = conn.execute(check_query).fetchone()
-        if not result or result[0] == 0:
-            self.points = []
-            self._loaded = True
-            self.refresh()
-            return
-
-        # Hämta centroids med sampling för stora dataset
-        # Först kolla om datan ser ut som WGS84 (små koordinater) eller SWEREF99 TM (stora)
-        check_query = f"""
-            SELECT ST_X(ST_Centroid({geometry_column})) as x
-            FROM {schema}.{table}
-            WHERE {geometry_column} IS NOT NULL
-            LIMIT 1
-        """
-        sample_x = conn.execute(check_query).fetchone()
-        needs_transform = sample_x and sample_x[0] is not None and abs(sample_x[0]) < 180
-
-        if needs_transform:
-            # Koordinater ser ut som WGS84 - transformera till SWEREF99 TM
-            geom = geometry_column
-            query = f"""
-                SELECT
-                    ST_X(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as x,
-                    ST_Y(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as y
-                FROM {schema}.{table}
-                WHERE {geom} IS NOT NULL
-                USING SAMPLE {sample_size}
-            """
-        else:
-            # Koordinater ser ut som SWEREF99 TM - använd direkt
-            query = f"""
-                SELECT
-                    ST_X(ST_Centroid({geometry_column})) as x,
-                    ST_Y(ST_Centroid({geometry_column})) as y
-                FROM {schema}.{table}
-                WHERE {geometry_column} IS NOT NULL
-                USING SAMPLE {sample_size}
-            """
-
-        try:
-            rows = conn.execute(query).fetchall()
-            self.points = [(float(x), float(y)) for x, y in rows if x is not None and y is not None]
-        except Exception:
-            # Fallback utan sampling
-            if needs_transform:
-                geom = geometry_column
-                query_simple = f"""
-                    SELECT
-                        ST_X(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as x,
-                        ST_Y(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as y
-                    FROM {schema}.{table}
-                    WHERE {geom} IS NOT NULL
-                    LIMIT {sample_size}
-                """
-            else:
-                query_simple = f"""
-                    SELECT
-                        ST_X(ST_Centroid({geometry_column})) as x,
-                        ST_Y(ST_Centroid({geometry_column})) as y
-                    FROM {schema}.{table}
-                    WHERE {geometry_column} IS NOT NULL
-                    LIMIT {sample_size}
-                """
-            rows = conn.execute(query_simple).fetchall()
-            self.points = [(float(x), float(y)) for x, y in rows if x is not None and y is not None]
-
+        self.points = load_centroids_from_query(conn, schema, table, geometry_column, sample_size)
         self._calculate_stats()
         self._loaded = True
         self.refresh()
@@ -566,57 +566,7 @@ class BrailleMapWidget(Static):
             geometry_column: Namn på geometrikolumnen
             sample_size: Max antal punkter att ladda (för prestanda)
         """
-        # Kontrollera att tabellen finns
-        check_query = f"""
-            SELECT COUNT(*) FROM information_schema.tables
-            WHERE table_schema = '{schema}' AND table_name = '{table}'
-        """
-        result = conn.execute(check_query).fetchone()
-        if not result or result[0] == 0:
-            self.points = []
-            self._loaded = True
-            self.refresh()
-            return
-
-        # Kolla koordinatsystem
-        check_query = f"""
-            SELECT ST_X(ST_Centroid({geometry_column})) as x
-            FROM {schema}.{table}
-            WHERE {geometry_column} IS NOT NULL
-            LIMIT 1
-        """
-        sample_x = conn.execute(check_query).fetchone()
-        needs_transform = sample_x and sample_x[0] is not None and abs(sample_x[0]) < 180
-
-        if needs_transform:
-            geom = geometry_column
-            query = f"""
-                SELECT
-                    ST_X(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as x,
-                    ST_Y(ST_Centroid(ST_Transform({geom}, 'EPSG:4326', 'EPSG:3006'))) as y
-                FROM {schema}.{table}
-                WHERE {geom} IS NOT NULL
-                USING SAMPLE {sample_size}
-            """
-        else:
-            query = f"""
-                SELECT
-                    ST_X(ST_Centroid({geometry_column})) as x,
-                    ST_Y(ST_Centroid({geometry_column})) as y
-                FROM {schema}.{table}
-                WHERE {geometry_column} IS NOT NULL
-                USING SAMPLE {sample_size}
-            """
-
-        try:
-            rows = conn.execute(query).fetchall()
-            self.points = [(float(x), float(y)) for x, y in rows if x is not None and y is not None]
-        except Exception:
-            # Fallback utan SAMPLE
-            query_simple = query.replace(f"USING SAMPLE {sample_size}", f"LIMIT {sample_size}")
-            rows = conn.execute(query_simple).fetchall()
-            self.points = [(float(x), float(y)) for x, y in rows if x is not None and y is not None]
-
+        self.points = load_centroids_from_query(conn, schema, table, geometry_column, sample_size)
         self._calculate_stats()
         self._loaded = True
         self.refresh()
