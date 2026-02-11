@@ -3,7 +3,7 @@
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select
 
 from g_etl.h3_query import query_polygon
 
@@ -195,7 +195,6 @@ class H3QueryScreen(Screen):
 
         try:
             # Kör query med h3_query module
-            import pandas as pd
 
             df = query_polygon(
                 polygon_wkt=polygon_wkt,
@@ -207,9 +206,7 @@ class H3QueryScreen(Screen):
             self.result_data = df.to_dict("records")
 
             # Uppdatera status
-            status_label.update(
-                f"✓ Query klar! Hittade {len(self.result_data):,} resultat"
-            )
+            status_label.update(f"✓ Query klar! Hittade {len(self.result_data):,} resultat")
 
             # Visa resultat i tabell
             self._display_results(df)
@@ -239,6 +236,5 @@ class H3QueryScreen(Screen):
 
         if len(df) > max_rows:
             self.query_one("#status", Label).update(
-                f"✓ Visar {max_rows:,} av {len(df):,} resultat "
-                f"(använd export för fullständig data)"
+                f"✓ Visar {max_rows:,} av {len(df):,} resultat (använd export för fullständig data)"
             )

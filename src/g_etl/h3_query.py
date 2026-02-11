@@ -91,9 +91,7 @@ def query_polygon(
     return result
 
 
-def _build_objects_query(
-    polygon_wkt: str, resolution: int, datasets: list[str] | None
-) -> str:
+def _build_objects_query(polygon_wkt: str, resolution: int, datasets: list[str] | None) -> str:
     """Bygg query för individuella objekt (använder g_h3_query_cells från 003_db_makros.sql)."""
     dataset_filter = ""
     if datasets:
@@ -117,9 +115,7 @@ def _build_objects_query(
     """
 
 
-def _build_stats_query(
-    polygon_wkt: str, resolution: int, datasets: list[str] | None
-) -> str:
+def _build_stats_query(polygon_wkt: str, resolution: int, datasets: list[str] | None) -> str:
     """Bygg query för aggregerad statistik per dataset."""
     dataset_filter = ""
     if datasets:
@@ -144,9 +140,7 @@ def _build_stats_query(
     """
 
 
-def _build_heatmap_query(
-    polygon_wkt: str, resolution: int, datasets: list[str] | None
-) -> str:
+def _build_heatmap_query(polygon_wkt: str, resolution: int, datasets: list[str] | None) -> str:
     """Bygg query för H3-heatmap."""
     dataset_filter = ""
     if datasets:
@@ -195,7 +189,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 3:
         agg = sys.argv[3]
 
-    print(f"🗺️  H3 Polygon Query")
+    print("🗺️  H3 Polygon Query")
     print(f"Resolution: {res}, Aggregation: {agg}\n")
 
     df = query_polygon(polygon, resolution=res, aggregation=agg)
