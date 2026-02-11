@@ -18,6 +18,11 @@ tasks:
     cmds:
       - uv run harlequin data/warehouse.duckdb
 
+  hq_parquet:
+    desc:
+    cmds:
+      - uv run harlequin /home/mate01/g-etl_test/data/raw/underlag_taktplan.parquet
+
   sf:
     desc: Starta Superfile (filhanterare)
     cmds:

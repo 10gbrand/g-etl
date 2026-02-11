@@ -168,8 +168,14 @@ class Migrator:
     def discover_migrations(self) -> list[Migration]:
         """Hitta alla migreringsfiler och deras status.
 
+        Söker rekursivt i underkataloger för pipeline-specifika migrationer.
+        Root-filer sorteras först, sedan pipeline-kataloger i bokstavsordning.
+
+        Versions-ID för underkatalog-filer prefixas med katalognamn:
+        root: "004", underkatalog: "aab_ext_restr/001"
+
         Returns:
-            Lista av Migration-objekt sorterade efter version
+            Lista av Migration-objekt sorterade: root först, sedan underkataloger
         """
         if not self.migrations_dir.exists():
             return []
@@ -177,6 +183,7 @@ class Migrator:
         applied = self._get_applied_versions()
         migrations = []
 
+        # 1. Root-nivå SQL-filer
         for path in sorted(self.migrations_dir.glob("*.sql")):
             version, name = self._parse_filename(path)
             up_sql, down_sql = self._parse_migration_file(path)
@@ -193,6 +200,30 @@ class Migrator:
                     status=status,
                 )
             )
+
+        # 2. Pipeline-underkataloger (sorterade per katalognamn)
+        for subdir in sorted(self.migrations_dir.iterdir()):
+            if not subdir.is_dir() or subdir.name.startswith((".", "_")):
+                continue
+
+            for path in sorted(subdir.glob("*.sql")):
+                file_version, name = self._parse_filename(path)
+                # Prefix version med katalognamn för unikhet
+                version = f"{subdir.name}/{file_version}"
+                up_sql, down_sql = self._parse_migration_file(path)
+
+                status = MigrationStatus.APPLIED if version in applied else MigrationStatus.PENDING
+
+                migrations.append(
+                    Migration(
+                        version=version,
+                        name=name,
+                        path=path,
+                        up_sql=up_sql,
+                        down_sql=down_sql,
+                        status=status,
+                    )
+                )
 
         return migrations
 
@@ -457,7 +488,9 @@ class Migrator:
     def get_template_version(self, version: str, dataset_id: str) -> str:
         """Generera versions-ID för en template-migrering med dataset.
 
-        Format: "004:sksbiotopskydd" för template "004_staging_transform_template"
+        Format:
+            Root: "004:sksbiotopskydd"
+            Pipeline: "aab_ext_restr/001:sksbiotopskydd"
         """
         return f"{version}:{dataset_id}"
 

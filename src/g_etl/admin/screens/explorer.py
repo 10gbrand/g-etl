@@ -455,12 +455,16 @@ class ExplorerScreen(Screen):
                     display_row.append(str_val)
             data_table.add_row(*display_row)
 
+    def _find_map_widget(self) -> BrailleMapWidget:
+        """Hitta kart-widgeten."""
+        return self.query_one(BrailleMapWidget)
+
     @work(thread=True)
     def _load_map_data(self, schema: str, table: str, geometry_col: str) -> None:
         """Ladda geometri-data för kartan."""
         try:
             conn = self._get_connection()
-            map_widget = self.query_one(BrailleMapWidget)
+            map_widget = self._find_map_widget()
 
             # Uppdatera titeln
             def set_title():

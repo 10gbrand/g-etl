@@ -1,4 +1,5 @@
 -- Mart kompakterade H3-cells för {{ dataset_id }}
+-- Pipeline: ext_restr (aab_ext_restr/003)
 -- Schema: {{ schema }}
 -- Källa: {{ prev_schema }}.{{ dataset_id }}
 -- Skapar en tabell per dataset med kompakterade H3-celler

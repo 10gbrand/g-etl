@@ -30,7 +30,7 @@ def duckdb_conn():
     # Skapa scheman
     conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
     conn.execute("CREATE SCHEMA IF NOT EXISTS staging")
-    conn.execute("CREATE SCHEMA IF NOT EXISTS staging_2")
+    conn.execute("CREATE SCHEMA IF NOT EXISTS staging_004")
     conn.execute("CREATE SCHEMA IF NOT EXISTS mart")
 
     yield conn
@@ -46,6 +46,7 @@ def sample_dataset_config():
         "description": "Ett test-dataset",
         "typ": "test",
         "plugin": "wfs",
+        "pipeline": "ext_restr",
         "enabled": True,
         "field_mapping": {
             "source_id_column": "$objekt_id",

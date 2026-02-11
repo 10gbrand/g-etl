@@ -18,28 +18,34 @@ class TestQGISPipelineRunnerInit:
         sql_dir = tmp_path / "sql" / "migrations"
         sql_dir.mkdir(parents=True)
 
-        # Skapa datasets.yml
+        # Skapa datasets.yml (nytt pipeline-grupperat format)
         datasets_config = {
-            "datasets": [
+            "pipelines": [
                 {
-                    "id": "test_dataset",
-                    "name": "Test Dataset",
-                    "type": "test_type",
-                    "plugin": "wfs",
-                    "enabled": True,
-                    "field_mapping": {
-                        "source_id_column": "$id",
-                        "klass": "test",
-                        "leverantor": "test_lev",
-                    },
-                },
-                {
-                    "id": "another_dataset",
-                    "name": "Another Dataset",
-                    "type": "other_type",
-                    "plugin": "geoparquet",
-                    "enabled": True,
-                },
+                    "id": "test_pipeline",
+                    "name": "Test Pipeline",
+                    "datasets": [
+                        {
+                            "id": "test_dataset",
+                            "name": "Test Dataset",
+                            "type": "test_type",
+                            "plugin": "wfs",
+                            "enabled": True,
+                            "field_mapping": {
+                                "source_id_column": "$id",
+                                "klass": "test",
+                                "leverantor": "test_lev",
+                            },
+                        },
+                        {
+                            "id": "another_dataset",
+                            "name": "Another Dataset",
+                            "type": "other_type",
+                            "plugin": "geoparquet",
+                            "enabled": True,
+                        },
+                    ],
+                }
             ]
         }
         (config_dir / "datasets.yml").write_text(yaml.dump(datasets_config))
@@ -70,7 +76,7 @@ class TestQGISPipelineRunnerInit:
                     "runner.core.settings": MagicMock(settings=mock_settings),
                 },
             ):
-                # Skapa en mock runner
+                # Skapa en mock runner (speglar qgis_runner.py list_datasets)
                 class MockQGISPipelineRunner:
                     def __init__(self, plugin_dir):
                         self.plugin_dir = plugin_dir
@@ -82,8 +88,18 @@ class TestQGISPipelineRunnerInit:
                         if not config_path.exists():
                             return []
                         with open(config_path) as f:
-                            config = yaml.safe_load(f)
-                        return config.get("datasets", [])
+                            data = yaml.safe_load(f)
+                        if not data:
+                            return []
+                        if "pipelines" in data:
+                            result = []
+                            for pipeline in data["pipelines"]:
+                                pipeline_id = pipeline.get("id", "")
+                                for ds in pipeline.get("datasets", []):
+                                    ds["pipeline"] = pipeline_id
+                                    result.append(ds)
+                            return result
+                        return data.get("datasets", [])
 
                     def list_dataset_types(self):
                         datasets = self.list_datasets()
@@ -114,8 +130,18 @@ class TestQGISPipelineRunnerInit:
                 if not config_path.exists():
                     return []
                 with open(config_path) as f:
-                    config = yaml.safe_load(f)
-                return config.get("datasets", [])
+                    data = yaml.safe_load(f)
+                if not data:
+                    return []
+                if "pipelines" in data:
+                    result = []
+                    for pipeline in data["pipelines"]:
+                        pipeline_id = pipeline.get("id", "")
+                        for ds in pipeline.get("datasets", []):
+                            ds["pipeline"] = pipeline_id
+                            result.append(ds)
+                    return result
+                return data.get("datasets", [])
 
         runner = MockQGISPipelineRunner(tmp_path)
         datasets = runner.list_datasets()
@@ -134,8 +160,18 @@ class TestQGISPipelineRunnerInit:
                 if not config_path.exists():
                     return []
                 with open(config_path) as f:
-                    config = yaml.safe_load(f)
-                return config.get("datasets", [])
+                    data = yaml.safe_load(f)
+                if not data:
+                    return []
+                if "pipelines" in data:
+                    result = []
+                    for pipeline in data["pipelines"]:
+                        pipeline_id = pipeline.get("id", "")
+                        for ds in pipeline.get("datasets", []):
+                            ds["pipeline"] = pipeline_id
+                            result.append(ds)
+                    return result
+                return data.get("datasets", [])
 
             def list_dataset_types(self):
                 datasets = self.list_datasets()

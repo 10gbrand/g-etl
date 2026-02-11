@@ -8,8 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
 # Importera den gemensamma PipelineRunner
 from g_etl.admin.services.pipeline_runner import PipelineEvent, PipelineRunner
 from g_etl.settings import settings
@@ -50,13 +48,9 @@ class Pipeline:
 
     def load_config(self) -> list[dict]:
         """Ladda dataset-konfiguration från YAML."""
-        if not self.config_path.exists():
-            return []
+        from g_etl.config_loader import load_datasets_config
 
-        with open(self.config_path) as f:
-            data = yaml.safe_load(f)
-
-        return data.get("datasets", [])
+        return load_datasets_config(self.config_path)
 
     def run(
         self,
@@ -65,6 +59,8 @@ class Pipeline:
         extract_only: bool = False,
         transform_only: bool = False,
         on_log: Callable[[str], None] | None = None,
+        keep_staging: bool = False,
+        save_sql: bool = False,
     ) -> PipelineResult:
         """Kör pipeline med parallell exekvering.
 
@@ -76,6 +72,8 @@ class Pipeline:
             extract_only: Kör bara extract, inte transform
             transform_only: Kör bara transform, inte extract
             on_log: Callback för loggmeddelanden
+            keep_staging: Behåll staging-tabeller i warehouse efter merge
+            save_sql: Spara renderade SQL-filer till data/log_sql/
         """
         # Kör async-metoden synkront
         return asyncio.run(
@@ -85,6 +83,8 @@ class Pipeline:
                 extract_only=extract_only,
                 transform_only=transform_only,
                 on_log=on_log,
+                keep_staging=keep_staging,
+                save_sql=save_sql,
             )
         )
 
@@ -95,6 +95,8 @@ class Pipeline:
         extract_only: bool = False,
         transform_only: bool = False,
         on_log: Callable[[str], None] | None = None,
+        keep_staging: bool = False,
+        save_sql: bool = False,
     ) -> PipelineResult:
         """Asynkron pipeline-körning med parallella processer."""
         if on_log:
@@ -223,6 +225,7 @@ class Pipeline:
             phases=(True, True),  # staging, mart
             on_log=on_log,
             on_event=on_event,
+            save_sql=save_sql,
         )
 
         # === MERGE ===
@@ -234,6 +237,7 @@ class Pipeline:
             temp_dbs=temp_dbs,
             on_log=on_log,
             on_event=on_event,
+            keep_staging=keep_staging,
         )
 
         # === POST-MERGE SQL ===
@@ -293,6 +297,16 @@ def main():
     parser.add_argument("--quiet", "-q", action="store_true", help="Visa minimal output")
     parser.add_argument("--no-log-file", action="store_true", help="Inaktivera loggning till fil")
     parser.add_argument("--log-dir", default="logs", help="Mapp för loggfiler (default: logs/)")
+    parser.add_argument(
+        "--keep-staging",
+        action="store_true",
+        help="Behåll staging-tabeller i warehouse efter merge",
+    )
+    parser.add_argument(
+        "--save-sql",
+        action="store_true",
+        help="Spara renderade SQL-filer till data/log_sql/",
+    )
 
     args = parser.parse_args()
 
@@ -343,6 +357,8 @@ def main():
             extract_only=args.extract_only,
             transform_only=args.transform_only,
             on_log=log,
+            keep_staging=args.keep_staging,
+            save_sql=args.save_sql,
         )
 
         if file_logger and file_logger.log_file:

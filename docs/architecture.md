@@ -15,9 +15,9 @@ flowchart TB
 
     subgraph Transform["2. PARALLELL TRANSFORM (temp-DB per dataset)"]
         direction TB
-        P1 --> T1["dataset1.duckdb<br/>raw→staging→staging_2→mart"]
-        P2 --> T2["dataset2.duckdb<br/>raw→staging→staging_2→mart"]
-        P3 --> T3["dataset3.duckdb<br/>raw→staging→staging_2→mart"]
+        P1 --> T1["dataset1.duckdb<br/>raw→staging_004→[pipeline]→mart"]
+        P2 --> T2["dataset2.duckdb<br/>raw→staging_004→[pipeline]→mart"]
+        P3 --> T3["dataset3.duckdb<br/>raw→staging_004→[pipeline]→mart"]
     end
 
     subgraph Merge["3. MERGE"]
@@ -29,8 +29,8 @@ flowchart TB
 
     subgraph PostMerge["4. POST-MERGE SQL"]
         direction TB
-        W --> PM["*_merged.sql<br/>(aggregeringar)"]
-        PM --> WF[(mart.all_h3_cells)]
+        W --> PM["pipeline *_merged.sql"]
+        PM --> XP["x*.sql post-pipeline"]
     end
 
     Extract --> Transform --> Merge --> PostMerge
@@ -72,7 +72,7 @@ Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelis
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
 │  │ temp1.db │  │ temp2.db │  │ temp3.db │  │ temp4.db │  ...    │
-│  │ 004→007  │  │ 004→007  │  │ 004→007  │  │ 004→007  │         │
+│  │004+pipe  │  │004+pipe  │  │004+pipe  │  │004+pipe  │         │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘         │
 └───────┼─────────────┼─────────────┼─────────────┼───────────────┘
         │             │             │             │
@@ -85,7 +85,8 @@ Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelis
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  POST-MERGE (sekventiell)                                       │
-│  └── *_merged.sql → aggregeringar över alla datasets            │
+│  ├── pipeline/*_merged.sql → per-pipeline aggregeringar         │
+│  └── x*.sql → post-pipeline globala aggregeringar               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -130,51 +131,25 @@ h3_latlng_to_cell_string(lat, lng, 13) AS _h3_index,
 to_json(h3_polygon_wkt_to_cells_string(wkt, 11)) AS _h3_cells
 ```
 
-**Resultat:** `staging.{dataset}` – standardiserad data med H3-index.
+**Resultat:** `staging_004.{dataset}` – standardiserad data med H3-index.
 
-### Steg 3: Staging_2 (SQL → staging_2.*)
+### Steg 3: Pipeline-templates (SQL → staging_{pipeline}_NNN.*, mart.*)
 
-Normaliserar alla dataset till en enhetlig struktur.
+Varje dataset tillhör en pipeline (t.ex. `ext_restr`) angiven i `datasets.yml`.
+Pipeline-specifika templates körs efter delade root-templates.
 
-#### 3a. Genererad SQL
-`005_staging2_normalisering_template.sql` renderas med värden från `field_mapping:` i `datasets.yml`.
-Konfigurationen styr hur data mappas:
+**ext_restr-pipelinen:**
+- `001_staging_normalisering_template.sql` → `staging_ext_restr_001`: Normaliserad struktur
+- `002_mart_h3_cells_template.sql` → `mart`: Exploderade H3-celler
+- `003_mart_compact_h3_cells_template.sql` → `mart`: Kompakterade H3-celler
 
-```sql
-SELECT
-    _source_id_md5 AS id,
-    source_id,           -- Käll-ID (t.ex. beteckn)
-    klass,               -- Typ av skydd (biotopskydd, naturreservat, etc.)
-    grupp,               -- Undergrupp
-    typ,                 -- Specifik typ
-    leverantor,          -- Dataleverantör (sks, nvv, sgu)
-    h3_center,           -- H3-cell för centroid
-    h3_cells,            -- Alla H3-celler inom polygonen
-    json_data,           -- Originaldata som JSON
-    data_1..data_5,      -- Extra datafält
-    geom
-FROM staging.{dataset}
-```
+**Resultat:** `staging_ext_restr_001.{dataset}` + `mart.{dataset}_h3`
 
-**Resultat:** `staging_2.{dataset}` – normaliserade dataset med enhetlig struktur.
+### Steg 4: Merge + Post-merge
 
-### Steg 4: Mart (SQL → mart.*)
-
-Aggregerar alla dataset till en gemensam H3-tabell.
-
-#### 4a. Mart-templates
-
-`006_mart_h3_cells_template.sql` och `007_mart_compact_h3_cells_template.sql` körs per dataset och skapar:
-
-- `mart.{dataset}` – exploderade H3-celler med geometri
-- `mart.{dataset}_compact` – kompakterade H3-celler
-
-#### 4b. Post-merge SQL (`*_merged.sql`)
-
-Efter merge körs `*_merged.sql`-filer för aggregeringar över alla datasets:
-
-- Kombinerar alla dataset-tabeller
-- Skapar gemensamma vyer/tabeller
+1. **Merge:** Kopierar `raw` och `mart` från alla temp-DBs till warehouse.duckdb
+2. **Pipeline-merged:** `aab_ext_restr/100_merged.sql` → H3-index aggregering
+3. **Post-pipeline:** `x*.sql` filer (globala aggregeringar)
 
 **Resultat:** `mart.*` – aggregerade tabeller redo för analys och export.
 
@@ -187,27 +162,35 @@ Transformationer körs parallellt med separata temp-databaser per dataset:
    └── Plugins → parquet-filer (en per dataset)
 
 2. Parallell Transform (temp-DB per dataset)
-   ├── dataset1.duckdb ──┐
-   ├── dataset2.duckdb ──┼── Kör alla templates: 004→005→006→007
+   ├── dataset1.duckdb ──┐  Root: 004_staging_transform_template
+   ├── dataset2.duckdb ──┼── Pipeline: aab_ext_restr/001 → 002 → 003
    └── dataset3.duckdb ──┘
 
 3. Merge
    └── Kombinera alla temp-DBs → warehouse.duckdb
 
 4. Post-merge SQL
-   └── sql/migrations/*_merged.sql → Aggregeringar över alla datasets
+   ├── aab_ext_restr/100_merged.sql → Pipeline-specifika aggregeringar
+   └── x*.sql → Globala post-pipeline
 ```
 
 ### SQL-templates
 
 Templates (`*_template.sql`) körs automatiskt per dataset:
 
-| Fil                                       | Fas       | Beskrivning               |
-| ----------------------------------------- | --------- | ------------------------- |
-| `004_staging_transform_template.sql`      | Staging   | Validering, MD5, H3-index |
-| `005_staging2_normalisering_template.sql` | Staging_2 | Normaliserad struktur     |
-| `006_mart_h3_cells_template.sql`          | Mart      | Exploderade H3-celler     |
-| `007_mart_compact_h3_cells_template.sql`  | Mart      | Kompakterade H3-celler    |
+**Root (alla datasets):**
+
+| Fil                                       | Schema       | Beskrivning               |
+| ----------------------------------------- | ------------ | ------------------------- |
+| `004_staging_transform_template.sql`      | staging_004  | Validering, MD5, H3-index |
+
+**Pipeline ext_restr:**
+
+| Fil                                       | Schema                | Beskrivning               |
+| ----------------------------------------- | --------------------- | ------------------------- |
+| `aab_ext_restr/001_staging_normalisering_template.sql` | staging_ext_restr_001 | Normaliserad struktur     |
+| `aab_ext_restr/002_mart_h3_cells_template.sql`         | mart                  | Exploderade H3-celler     |
+| `aab_ext_restr/003_mart_compact_h3_cells_template.sql` | mart                  | Kompakterade H3-celler    |
 
 ```text
 Template-rendering:
@@ -237,31 +220,25 @@ Template-rendering:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Post-merge SQL (`*_merged.sql`)
+### Post-merge SQL
 
-Filer med suffix `_merged.sql` körs EFTER merge för aggregeringar:
+Tre typer körs i ordning efter merge:
 
-```sql
--- sql/migrations/100_all_h3_cells_merged.sql
-CREATE OR REPLACE TABLE mart.all_h3_cells AS
-SELECT * FROM mart.naturreservat
-UNION ALL SELECT * FROM mart.biotopskyddsomraden
-UNION ALL SELECT * FROM mart.vattenskyddsomraden;
-.
-.
-```
+1. **Pipeline-merged** (`aab_ext_restr/100_merged.sql`): Per pipeline-katalog
+2. **Root-merged** (`100_merged.sql`): Root-nivå
+3. **Post-pipeline** (`x01_*.sql`): Globala aggregeringar, körs sist
 
 ## DuckDB-scheman
 
-| Schema      | Syfte                                                      |
-| ----------- | ---------------------------------------------------------- |
-| `raw`       | Rå ingesterad data direkt från plugins                     |
-| `staging`   | Validerad geometri, metadata och H3-index                  |
-| `staging_2` | Normaliserade dataset med enhetlig struktur                |
-| `mart`      | Aggregerade tabeller (h3_cells) redo för analys och export |
+| Schema                    | Syfte                                          |
+| ------------------------- | ---------------------------------------------- |
+| `raw`                     | Rå ingesterad data direkt från plugins          |
+| `staging_004`             | Validerad geometri, metadata och H3-index       |
+| `staging_{pipeline}_{N}`  | Pipeline-specifik staging (t.ex. normalisering) |
+| `mart`                    | Aggregerade tabeller redo för analys och export  |
 
 ```text
-Dataflöde genom scheman (per dataset):
+Dataflöde genom scheman (per dataset, pipeline=ext_restr):
 
 ┌─────────────────────────────────────────────────────────────────┐
 │  raw.{dataset}                                                  │
@@ -270,27 +247,27 @@ Dataflöde genom scheman (per dataset):
                                 │ 004_staging_transform_template.sql
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  staging.{dataset}                                              │
+│  staging_004.{dataset}                                          │
 │  ├── Validerad geometri (geom)                                  │
 │  ├── Metadata (_imported_at, _geom_md5, _attr_md5)              │
 │  ├── H3-index (_h3_index, _h3_cells)                            │
 │  └── JSON-data (_json_data)                                     │
 └───────────────────────────────┬─────────────────────────────────┘
-                                │ 005_staging2_normalisering_template.sql
+                                │ aab_ext_restr/001_staging_normalisering
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  staging_2.{dataset}                                            │
+│  staging_ext_restr_001.{dataset}                                │
 │  ├── Normaliserade fält (klass, grupp, typ, leverantor)         │
 │  ├── H3 (h3_center, h3_cells)                                   │
 │  └── Extra data (data_1..data_5)                                │
 └───────────────────────────────┬─────────────────────────────────┘
-                                │ 006/007_mart_*_template.sql
+                                │ aab_ext_restr/002+003_mart_*
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  mart.{dataset}                                                 │
+│  mart.{dataset}_h3                                              │
 │  └── En rad per H3-cell med geometri                            │
 │                                                                 │
-│  mart.{dataset}_compact                                         │
+│  mart.{dataset}_h3_compact                                      │
 │  └── Kompakterade H3-celler (färre rader)                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -326,11 +303,14 @@ g-etl/
 │       ├── 001_db_extensions.sql           # Init: extensions
 │       ├── 002_db_schemas.sql              # Init: scheman
 │       ├── 003_db_makros.sql               # Init: makron
-│       ├── 004_staging_transform_template.sql    # Template: staging
-│       ├── 005_staging2_normalisering_template.sql # Template: staging_2
-│       ├── 006_mart_h3_cells_template.sql        # Template: mart
-│       ├── 007_mart_compact_h3_cells_template.sql # Template: mart
-│       └── 100_*_merged.sql                # Post-merge aggregeringar
+│       ├── 004_staging_transform_template.sql  # Delad staging
+│       ├── aaa_avdelning/                  # Pipeline "avdelning"
+│       ├── aab_ext_restr/                  # Pipeline "ext_restr"
+│       │   ├── 001_staging_normalisering_template.sql
+│       │   ├── 002_mart_h3_cells_template.sql
+│       │   ├── 003_mart_compact_h3_cells_template.sql
+│       │   └── 100_mart_h3_index_merged.sql
+│       └── x*.sql                          # Post-pipeline
 ├── data/
 │   ├── raw/               # Parquet-filer från extract
 │   ├── temp/              # Temporära per-dataset DBs

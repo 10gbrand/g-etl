@@ -22,6 +22,7 @@ class Settings:
     TEMP_DIR: Path = Path("data/temp")  # Temporära per-dataset DBs
     INPUT_DATA_DIR: Path = Path("input_data")  # Lokala geodatafiler
     LOGS_DIR: Path = Path("logs")
+    LOG_SQL_DIR: Path = Path("data/log_sql")  # Renderade SQL-filer för felsökning
     SQL_DIR: Path = Path("sql")
     SQL_INIT_DIR: Path = Path("sql/_init")
     CONFIG_DIR: Path = Path("config")
@@ -113,6 +114,14 @@ class Settings:
                     db_file.unlink()
                 except OSError:
                     pass  # Ignorera om filen är låst
+
+    def cleanup_log_sql(self) -> None:
+        """Rensa renderade SQL-loggfiler."""
+        import shutil
+
+        if self.LOG_SQL_DIR.exists():
+            shutil.rmtree(self.LOG_SQL_DIR)
+        self.LOG_SQL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Singleton-instans

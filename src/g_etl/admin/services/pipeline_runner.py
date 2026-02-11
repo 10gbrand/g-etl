@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
-import yaml
 
 from g_etl.migrations.migrator import Migrator
 from g_etl.plugins import clear_download_cache, get_plugin
@@ -552,14 +551,9 @@ class PipelineRunner:
 
     def _load_datasets_config(self) -> dict[str, dict]:
         """Ladda datasets.yml och returnera som dict keyed på dataset id."""
-        config_path = settings.CONFIG_DIR / "datasets.yml"
-        if not config_path.exists():
-            return {}
+        from g_etl.config_loader import load_datasets_config
 
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        datasets = config.get("datasets", [])
+        datasets = load_datasets_config()
         return {ds["id"]: ds for ds in datasets if "id" in ds}
 
     async def run_templates(
@@ -723,85 +717,92 @@ class PipelineRunner:
 
         return fail_count == 0
 
+    def _filter_templates_by_phase(
+        self,
+        templates: list,
+        phases: tuple[bool, bool] | None,
+    ) -> list:
+        """Filtrera TemplateInfo-objekt baserat på valda faser.
+
+        Args:
+            templates: Lista av TemplateInfo
+            phases: (staging, mart) tuple. None = alla faser.
+        """
+        run_staging, run_mart = phases if phases else (True, True)
+        result = []
+        for t in templates:
+            t_lower = t.filename.lower()
+            if "_staging_" in t_lower:
+                if run_staging:
+                    result.append(t)
+            elif "_mart_" in t_lower:
+                if run_mart:
+                    result.append(t)
+            else:
+                result.append(t)
+        return result
+
     async def run_parallel_transform(
         self,
         parquet_files: list[tuple[str, str]],
         phases: tuple[bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        save_sql: bool = False,
     ) -> list[tuple[str, str]]:
         """Kör valda templates parallellt med separata temp-DBs per dataset.
 
         Varje dataset får sin egen DuckDB-fil för äkta parallelism utan
-        fillåsningscontention. Returnerar lista med (dataset_id, temp_db_path)
-        för efterföljande merge.
+        fillåsningscontention. Templates hämtas per pipeline:
+        - Root-templates (004_*) körs för alla datasets
+        - Pipeline-specifika templates körs baserat på dataset.pipeline
 
         Args:
             parquet_files: Lista av (dataset_id, parquet_path)
             phases: Tuple med (staging, mart) - vilka faser som ska köras.
-                    Staging inkluderar alla staging-templates (004, 005, etc.)
                     Om None körs alla faser.
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
+            save_sql: Spara renderade SQL-filer till data/log_sql/
 
         Returns:
             Lista av (dataset_id, temp_db_path) för merge
         """
         generator = SQLGenerator()
         datasets_config = self._load_datasets_config()
-        all_templates = generator.list_templates()
-
-        # Filtrera templates baserat på valda faser
-        # phases: (staging, mart) - staging inkluderar alla staging-templates
         run_staging, run_mart = phases if phases else (True, True)
 
-        templates = []
-        for t in sorted(all_templates):
-            t_lower = t.lower()
-            if "_staging_" in t_lower:
-                # Alla staging-templates (004_staging_*, 005_staging_*, etc.)
-                if run_staging:
-                    templates.append(t)
-            elif "_mart_" in t_lower:
-                if run_mart:
-                    templates.append(t)
-            else:
-                # Övriga templates körs alltid
-                templates.append(t)
-
-        # Bygg mapping från template-namn till Migration-objekt för spårning
-        conn = self._get_connection()
-        migrator = Migrator(conn, self.sql_path / "migrations")
-        template_migrations = {}
-        for migration in migrator.discover_migrations():
-            if migrator.is_template_migration(migration):
-                template_migrations[migration.name] = migration
+        # Rensa och förbered SQL-loggkatalog
+        if save_sql:
+            settings.cleanup_log_sql()
+            if on_log:
+                on_log(f"Sparar renderad SQL till {settings.LOG_SQL_DIR}/")
 
         max_concurrent = settings.MAX_CONCURRENT_SQL
         semaphore = asyncio.Semaphore(max_concurrent)
-        results: list[tuple[str, str, bool]] = []  # (dataset_id, temp_path, success)
 
         if on_log:
-            cpu_count = settings.MAX_CONCURRENT_SQL
             phases_str = ", ".join(
-                [
-                    p
-                    for p, enabled in [
-                        ("Staging", run_staging),
-                        ("Mart", run_mart),
-                    ]
-                    if enabled
-                ]
+                p for p, enabled in [("Staging", run_staging), ("Mart", run_mart)] if enabled
             )
             num_datasets = len(parquet_files)
-            on_log(f"=== Parallell transform: {num_datasets} datasets, {cpu_count} parallella ===")
-            on_log(f"    Faser: {phases_str} ({len(templates)} templates)")
+            on_log(
+                f"=== Parallell transform: {num_datasets} datasets, {max_concurrent} parallella ==="
+            )
+            on_log(f"    Faser: {phases_str}")
 
         async def process_dataset(dataset_id: str, parquet_path: str) -> tuple[str, str, bool]:
             """Processa ett dataset i egen temp-DB."""
             async with semaphore:
                 temp_db_path = str(settings.get_temp_db_path(dataset_id))
                 ds_config = datasets_config.get(dataset_id, {})
+                pipeline_name = ds_config.get("pipeline", "")
+
+                # Hämta templates för detta datasets pipeline
+                all_templates = generator.list_templates(
+                    pipeline=pipeline_name if pipeline_name else None
+                )
+                templates = self._filter_templates_by_phase(all_templates, phases)
 
                 if on_event:
                     on_event(
@@ -846,37 +847,33 @@ class PipelineRunner:
                             self._normalize_geometry_column_in_conn(temp_conn, dataset_id)
 
                             # Kör alla templates i ordning och spåra
-                            for template_name in templates:
-                                migration = template_migrations.get(template_name)
+                            for tmpl in templates:
+                                # Bestäm pipeline-kontext för schema-generering
+                                tmpl_pipeline = tmpl.pipeline
 
-                                # Skapa schema dynamiskt (staging_004, staging_005, etc.)
-                                schema_sql = generator.get_schema_create_sql(template_name)
+                                # Skapa schema dynamiskt
+                                schema_sql = generator.get_schema_create_sql(
+                                    tmpl.filename, pipeline=tmpl_pipeline
+                                )
                                 if schema_sql:
                                     temp_conn.execute(schema_sql)
 
                                 sql = generator.render_template(
-                                    template_name, dataset_id, ds_config
+                                    tmpl.relative_path,
+                                    dataset_id,
+                                    ds_config,
+                                    pipeline=tmpl_pipeline,
+                                    pipeline_templates=all_templates,
                                 )
                                 if sql:
-                                    temp_conn.execute(sql)
-
-                                    # Registrera som körd
-                                    if migration:
-                                        template_version = temp_migrator.get_template_version(
-                                            migration.version, dataset_id
+                                    if save_sql:
+                                        sql_log_dir = settings.LOG_SQL_DIR / dataset_id
+                                        sql_log_dir.mkdir(parents=True, exist_ok=True)
+                                        sql_filename = tmpl.relative_path.replace("/", "_")
+                                        (sql_log_dir / sql_filename).write_text(
+                                            sql, encoding="utf-8"
                                         )
-                                        checksum = temp_migrator._calculate_checksum(sql)
-                                        template_name_with_ds = f"{migration.name}:{dataset_id}"
-                                        try:
-                                            tbl = temp_migrator.MIGRATIONS_TABLE
-                                            ver = template_version
-                                            nm = template_name_with_ds
-                                            temp_conn.execute(f"""
-                                                INSERT INTO {tbl} (version, name, checksum)
-                                                VALUES ('{ver}', '{nm}', '{checksum}')
-                                            """)
-                                        except Exception:
-                                            pass
+                                    temp_conn.execute(sql)
 
                         finally:
                             temp_conn.close()
@@ -973,6 +970,7 @@ class PipelineRunner:
         temp_dbs: list[tuple[str, str]],
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        keep_staging: bool = False,
     ) -> bool:
         """Slå ihop temporära databaser till huvuddatabasen.
 
@@ -980,6 +978,7 @@ class PipelineRunner:
             temp_dbs: Lista av (dataset_id, temp_db_path)
             on_log: Callback för loggmeddelanden
             on_event: Callback för progress-events
+            keep_staging: Behåll staging-scheman i warehouse (kopieras från temp-DB)
 
         Returns:
             True om alla mergades framgångsrikt
@@ -992,6 +991,8 @@ class PipelineRunner:
 
         if on_log:
             on_log(f"=== Merge: {len(temp_dbs)} databaser → warehouse ===")
+            if keep_staging:
+                on_log("  (Behåller staging-scheman i warehouse)")
 
         for i, (dataset_id, temp_db_path) in enumerate(temp_dbs):
             if on_event:
@@ -1011,10 +1012,25 @@ class PipelineRunner:
                     conn.execute(f"ATTACH '{temp_db_path}' AS temp_db (READ_ONLY)")
 
                     try:
-                        # Kopiera alla tabeller från alla scheman
-                        # Använd duckdb_tables() istället för information_schema
-                        # (information_schema fungerar inte för attached DBs)
-                        for schema in settings.DUCKDB_SCHEMAS:
+                        # Bestäm vilka scheman som ska kopieras
+                        if keep_staging:
+                            # Dynamisk: hitta ALLA scheman (inkl staging_*)
+                            schemas_to_merge = [
+                                row[0]
+                                for row in conn.execute("""
+                                    SELECT DISTINCT schema_name
+                                    FROM duckdb_tables()
+                                    WHERE database_name = 'temp_db'
+                                    AND schema_name NOT IN ('main', 'information_schema')
+                                """).fetchall()
+                            ]
+                        else:
+                            schemas_to_merge = list(settings.DUCKDB_SCHEMAS)
+
+                        for schema in schemas_to_merge:
+                            # Skapa schemat i warehouse om det inte finns
+                            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+
                             tables = conn.execute(f"""
                                 SELECT table_name
                                 FROM duckdb_tables()
@@ -1144,33 +1160,55 @@ GROUP BY h3_cell;
         self,
         on_log: Callable[[str], None] | None = None,
     ) -> bool:
-        """Kör *_merged.sql filer efter att data slagits ihop.
+        """Kör merged SQL och post-pipeline filer efter merge.
 
-        Dessa filer kan innehålla aggregeringar över alla datasets,
-        t.ex. en samlad mart.h3_cells tabell.
+        Exekveringsordning:
+        1. Pipeline-underkatalogers *_merged.sql (sorterade per katalog)
+        2. Root-nivå *_merged.sql (bakåtkompatibilitet)
+        3. Post-pipeline x*.sql filer i roten
 
         Returns:
             True om alla kördes framgångsrikt
         """
+        import re
+
         conn = self._get_connection()
         migrations_dir = self.sql_path / "migrations"
 
         if not migrations_dir.exists():
             return True
 
-        # Hitta alla *_merged.sql filer
-        merged_files = sorted(migrations_dir.glob("*_merged.sql"))
+        # Samla alla filer att köra i ordning
+        all_sql_files: list[Path] = []
 
-        if not merged_files:
+        # 1. Pipeline-underkatalogers *_merged.sql
+        for subdir in sorted(migrations_dir.iterdir()):
+            if subdir.is_dir() and not subdir.name.startswith((".", "_")):
+                merged_files = sorted(subdir.glob("*_merged.sql"))
+                all_sql_files.extend(merged_files)
+
+        # 2. Root-nivå *_merged.sql
+        for f in sorted(migrations_dir.glob("*_merged.sql")):
+            if f.parent == migrations_dir:
+                all_sql_files.append(f)
+
+        # 3. Post-pipeline x*.sql filer
+        for f in sorted(migrations_dir.glob("x*.sql")):
+            if f.parent == migrations_dir and re.match(r"^x\d+", f.name):
+                all_sql_files.append(f)
+
+        if not all_sql_files:
             return True
 
         if on_log:
-            on_log(f"=== Kör {len(merged_files)} merged SQL-filer ===")
+            on_log(f"=== Kör {len(all_sql_files)} merged SQL-filer ===")
 
         success = True
-        for sql_file in merged_files:
+        for sql_file in all_sql_files:
+            # Visa relativ sökväg för pipeline-filer
+            rel_name = sql_file.relative_to(migrations_dir)
             if on_log:
-                on_log(f"  Kör {sql_file.name}...")
+                on_log(f"  Kör {rel_name}...")
 
             try:
                 sql = sql_file.read_text()
@@ -1508,6 +1546,7 @@ class MockPipelineRunner(PipelineRunner):
         phases: tuple[bool, bool] | None = None,
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        save_sql: bool = False,
     ) -> list[tuple[str, str]]:
         """Mock parallell transform."""
         run_staging, run_mart = phases if phases else (True, True)
@@ -1560,6 +1599,7 @@ class MockPipelineRunner(PipelineRunner):
         temp_dbs: list[tuple[str, str]],
         on_log: Callable[[str], None] | None = None,
         on_event: Callable[[PipelineEvent], None] | None = None,
+        keep_staging: bool = False,
     ) -> bool:
         """Mock merge."""
         if on_log:

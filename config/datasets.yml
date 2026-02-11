@@ -1,579 +1,608 @@
 # G-ETL Dataset-konfiguration
 #
-# Varje dataset har följande struktur:
-#   - id: Unikt ID (används som tabellnamn)
-#   - name: Visningsnamn
-#   - description: Beskrivning
-#   - typ: Datakälla-typ (för gruppering)
-#   - plugin: Plugin att använda (zip_geopackage, zip_shapefile, wfs, geoparquet)
-#   - url: URL eller sökväg till data
-#   - enabled: true/false
-#   - field_mapping: Fältmappning för staging och normalisering
-#     - source_id_column: $kolumnnamn (kolumnreferens med $-prefix)
-#     - klass: Klassificering (literal sträng)
-#     - grupp: Undergrupp (literal eller $kolumn)
-#     - typ: Typ (literal eller $kolumn)
-#     - leverantor: Dataleverantör (literal sträng)
+# Struktur:
+#   pipelines:
+#     - id: Pipeline-ID (matchar underkatalog i sql/migrations/)
+#       name: Visningsnamn
+#       datasets:
+#         - id: Unikt ID (används som tabellnamn)
+#           name: Visningsnamn
+#           description: Beskrivning
+#           typ: Datakälla-typ (för gruppering)
+#           plugin: Plugin att använda (zip_geopackage, zip_shapefile, wfs, geoparquet)
+#           url: URL eller sökväg till data
+#           enabled: true/false
+#           field_mapping: Fältmappning för staging och normalisering
 #
-# Syntax:
+# field_mapping-syntax:
 #   $kolumnnamn = kolumnreferens (hämtar värde från kolumn i data)
 #   värde       = literal sträng
 #   (tom)       = fältet ignoreras
 
-datasets:
+pipelines:
   # ============================================================================
-  # SKOGSSTYRELSEN (sks)
+  # PIPELINE: ext_restr (Externa restriktioner)
+  # SQL-templates: sql/migrations/aab_ext_restr/
   # ============================================================================
+  - id: ext_restr
+    name: Externa restriktioner
+    datasets:
+      # ========================================================================
+      # SKOGSSTYRELSEN (sks)
+      # ========================================================================
 
-  - id: avverkningsanmalningar
-    name: Avverkningsanmalningar
-    description: Avverkningsanmälda områden från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksAvverkAnm_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $beteckn
-      klass: avverkningsanmalan
-      grupp:
-      typ:
-      leverantor: sks
+      - id: avverkningsanmalningar
+        name: Avverkningsanmalningar
+        description: Avverkningsanmälda områden från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksAvverkAnm_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $beteckn
+          klass: avverkningsanmalan
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: sksbiotopskydd
-    name: sksbiotopskydd
-    description: Biotopskydd från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $beteckn
-      klass: biotopskydd
-      grupp: $Biotyp
-      typ: $Naturtyp
-      leverantor: sks
+      - id: sksbiotopskydd
+        name: sksbiotopskydd
+        description: Biotopskydd från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $beteckn
+          klass: biotopskydd
+          grupp: $Biotyp
+          typ: $Naturtyp
+          leverantor: sks
 
-  - id: sksdodagranar
-    name: sksDodaGranar
-    description: sksDodaGranarAI_EjValideradPunkt från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
-    enabled: false
-    field_mapping:
-      source_id_column:
-      klass: dodagranar
-      grupp:
-      typ:
-      leverantor: sks
+      - id: sksdodagranar
+        name: sksDodaGranar
+        description: sksDodaGranarAI_EjValideradPunkt från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksDodaGranarAI_EjValideradPunkt_gpkg.zip
+        enabled: false
+        field_mapping:
+          source_id_column:
+          klass: dodagranar
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: naturvardsavtal_sks
-    name: Naturvardsavtal_SKS
-    description: Naturvardsavtal från skogsstyrelsen, kod 104 i GISS
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNaturvardsavtal_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $beteckn
-      klass: naturvardsavtal
-      grupp:
-      typ:
-      leverantor: sks
+      - id: naturvardsavtal_sks
+        name: Naturvardsavtal_SKS
+        description: Naturvardsavtal från skogsstyrelsen, kod 104 i GISS
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNaturvardsavtal_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $beteckn
+          klass: naturvardsavtal
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: biotopskydd_sks
-    name: Biotopskydd_SKS
-    description: Biotopskydd från skogsstyrelsen, kod 105 i GISS
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $uuid
-      klass: biotopskydd
-      grupp: $Biotyp
-      typ: $Naturtyp
-      leverantor: sks
+      - id: biotopskydd_sks
+        name: Biotopskydd_SKS
+        description: Biotopskydd från skogsstyrelsen, kod 105 i GISS
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksBiotopskydd_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $uuid
+          klass: biotopskydd
+          grupp: $Biotyp
+          typ: $Naturtyp
+          leverantor: sks
 
-  - id: nyckelbiotoper
-    name: Nyckelbiotoper
-    description: Nyckelbiotoper från skogsstyrelsen, kod 112 i GISS
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNyckelbiotoper_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $beteckn
-      klass: nyckelbiotop
-      grupp: $Biotop1
-      typ: $Biotop2
-      leverantor: sks
+      - id: nyckelbiotoper
+        name: Nyckelbiotoper
+        description: Nyckelbiotoper från skogsstyrelsen, kod 112 i GISS
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksNyckelbiotoper_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $beteckn
+          klass: nyckelbiotop
+          grupp: $Biotop1
+          typ: $Biotop2
+          leverantor: sks
 
-  - id: stornyckelbiotoper
-    name: StorNyckelbiotoper
-    description: Storskogsbrukets Nyckelbiotoper från skogsstyrelsen, kod 113 i GISS
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksStorskogsbrNyckelb_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $objectid
-      klass: nyckelbiotop
-      grupp:
-      typ:
-      leverantor: sks
+      - id: stornyckelbiotoper
+        name: StorNyckelbiotoper
+        description: Storskogsbrukets Nyckelbiotoper från skogsstyrelsen, kod 113 i GISS
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksStorskogsbrNyckelb_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $objectid
+          klass: nyckelbiotop
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: sumpskogar
-    name: Sumpskogar
-    description: Sumpskogar från skogsstyrelsen, kod 114 i GISS
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSumpskogar_gpkg.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $kartid2
-      klass: sumpskog
-      grupp:
-      typ:
-      leverantor: sks
+      - id: sumpskogar
+        name: Sumpskogar
+        description: Sumpskogar från skogsstyrelsen, kod 114 i GISS
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSumpskogar_gpkg.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $kartid2
+          klass: sumpskog
+          grupp:
+          typ:
+          leverantor: sks
 
-  # Inaktiverade SKS-dataset (källa finns ej)
-  - id: utford_avverkning
-    name: Utford_avverkning
-    description: Utförda avverkningar från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksUtfordAvverkning_gpkg.zip
-    enabled: false
-    status: källan finns ej
-    field_mapping:
-      source_id_column:
-      klass: utford_avverkning
-      grupp:
-      typ:
-      leverantor: sks
+      # Inaktiverade SKS-dataset (källa finns ej)
+      - id: utford_avverkning
+        name: Utford_avverkning
+        description: Utförda avverkningar från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksUtfordAvverkning_gpkg.zip
+        enabled: false
+        status: källan finns ej
+        field_mapping:
+          source_id_column:
+          klass: utford_avverkning
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: skog_med_hoga_naturvarden
-    name: Skog_med_hoga_naturvarden
-    description: Skog med höga naturvärden (SMHN) från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogMedHogaNaturvarden_gpkg.zip
-    enabled: false
-    status: källan finns ej
-    field_mapping:
-      source_id_column:
-      klass: smhn
-      grupp:
-      typ:
-      leverantor: sks
+      - id: skog_med_hoga_naturvarden
+        name: Skog_med_hoga_naturvarden
+        description: Skog med höga naturvärden (SMHN) från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogMedHogaNaturvarden_gpkg.zip
+        enabled: false
+        status: källan finns ej
+        field_mapping:
+          source_id_column:
+          klass: smhn
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: frotaktsomraden
-    name: Frotaktsomraden
-    description: Frötäktsområden från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksFrotaktsomraden_gpkg.zip
-    enabled: false
-    status: källan finns ej
-    field_mapping:
-      source_id_column:
-      klass: frotaktsomrade
-      grupp:
-      typ:
-      leverantor: sks
+      - id: frotaktsomraden
+        name: Frotaktsomraden
+        description: Frötäktsområden från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksFrotaktsomraden_gpkg.zip
+        enabled: false
+        status: källan finns ej
+        field_mapping:
+          source_id_column:
+          klass: frotaktsomrade
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: skog_o_historia_yta
-    name: Skog & historia - Ytor
-    description: Skogshistoriska ytor (polygoner) från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
-    layer: SkogoHistoriaYta
-    enabled: true
-    field_mapping:
-      source_id_column: $Objektnr
-      klass: skogshistorisk_yta
-      grupp:
-      typ:
-      leverantor: sks
+      - id: skog_o_historia_yta
+        name: Skog & historia - Ytor
+        description: Skogshistoriska ytor (polygoner) från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+        layer: SkogoHistoriaYta
+        enabled: true
+        field_mapping:
+          source_id_column: $Objektnr
+          klass: skogshistorisk_yta
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: skog_o_historia_pkt
-    name: Skog & historia - Punkter
-    description: Skogshistoriska punkter från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
-    layer: SkogoHistoriaPkt
-    enabled: true
-    field_mapping:
-      source_id_column: $Objektnr
-      klass: skogshistorisk_punkt
-      grupp:
-      typ:
-      leverantor: sks
+      - id: skog_o_historia_pkt
+        name: Skog & historia - Punkter
+        description: Skogshistoriska punkter från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+        layer: SkogoHistoriaPkt
+        enabled: true
+        field_mapping:
+          source_id_column: $Objektnr
+          klass: skogshistorisk_punkt
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: skog_o_historia_linje
-    name: Skog & historia - Linjer
-    description: Skogshistoriska linjer från Skogsstyrelsen
-    typ: skogsstyrelsen_gpkg
-    plugin: zip_geopackage
-    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
-    layer: SkogoHistoriaLinje
-    enabled: true
-    field_mapping:
-      source_id_column: $Objektnr
-      klass: skogshistorisk_linje
-      grupp:
-      typ:
-      leverantor: sks
+      - id: skog_o_historia_linje
+        name: Skog & historia - Linjer
+        description: Skogshistoriska linjer från Skogsstyrelsen
+        typ: skogsstyrelsen_gpkg
+        plugin: zip_geopackage
+        url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksSkogoHistoria_gpkg.zip
+        layer: SkogoHistoriaLinje
+        enabled: true
+        field_mapping:
+          source_id_column: $Objektnr
+          klass: skogshistorisk_linje
+          grupp:
+          typ:
+          leverantor: sks
 
-  - id: fornlamning
-    name: Riksantikvarieämbetet
-    description: Fornlämningar från Riksantikvarieämbetet
-    typ: raa_gpkg
-    plugin: geopackage
-    url: https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
-    enabled: true
-    field_mapping:
-      source_id_column: $Objektnr
-      klass: fornlamning
-      grupp:
-      typ:
-      leverantor: raa
+      - id: fornlamning
+        name: Riksantikvarieämbetet
+        description: Fornlämningar från Riksantikvarieämbetet
+        typ: raa_gpkg
+        plugin: geopackage
+        url: https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
+        enabled: true
+        field_mapping:
+          source_id_column: $Objektnr
+          klass: fornlamning
+          grupp:
+          typ:
+          leverantor: raa
+
+      # ========================================================================
+      # NATURVÅRDSVERKET (nvv)
+      # ========================================================================
+
+      - id: nationalparker
+        name: Nationalparker
+        description: Nationalparker från naturvardsverket, kod 101 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NP.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: nationalpark
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: naturreservat
+        name: Naturreservat
+        description: Naturreservat från naturvardsverket, kod 102 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NR.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: naturreservat
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: natura2000_sci_ac
+        name: Natura2000_SCI AC
+        description: Natura2000 från naturvardsverket, kod 103 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+        shp_filname: SCI_AC_lan.shp
+        enabled: true
+        field_mapping:
+          source_id_column: $SITE_CODE
+          klass: natura2000_sci
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: natura2000_sci_alvar_bd
+        name: Natura2000_SCI alvar BD
+        description: Natura2000 från naturvardsverket, kod 103 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+        shp_filname: SCI_alvar_BD_lan.shp
+        enabled: true
+        field_mapping:
+          source_id_column: $SITE_CODE
+          klass: natura2000_sci
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: natura2000_sci_ej_alvar_rikstackande
+        name: Natura2000_SCI ej alvar rikstäckande
+        description: Natura2000 från naturvardsverket, kod 103 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
+        shp_filname: SCI_ej_alvar_rikstackande.shp
+        enabled: true
+        field_mapping:
+          source_id_column: $SITE_CODE
+          klass: natura2000_sci
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: natura2000_spa
+        name: Natura2000_SPA
+        description: Natura2000 från naturvardsverket, kod 103 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $SITE_CODE
+          klass: natura2000_spa
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: naturvardsavtal
+        name: Naturvardsavtal
+        description: Naturvardsavtal från naturvardsverket, kod 104 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVA.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $geodb_oid
+          klass: naturvardsavtal
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: biotopskydd
+        name: Biotopskydd
+        description: Biotopskydd från naturvardsverket, kod 105 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/OBO.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: biotopskydd
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: vso
+        name: VSO
+        description: VSO från naturvardsverket, kod 106 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/VSO.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: vso
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: Naturvardsomrade
+        name: Naturvardsomrade
+        description: Naturvardsomrade från naturvardsverket, kod 118 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVO.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: naturvardsomrade
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: kulturreservat
+        name: Kulturreservat
+        description: Kulturreservat från Naturvårdsverket
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/KR.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: kulturreservat
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: naturminnen_punkt
+        name: Naturminnen punkt
+        description: Naturminnen från Naturvårdsverket
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
+        shp_filename: NM_point.shp
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: naturminne
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: naturminnen_ytor
+        name: Naturminnen ytor
+        description: Naturminnen från Naturvårdsverket
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
+        shp_filename: NM_polygon.shp
+        enabled: true
+        field_mapping:
+          source_id_column: $NVRID
+          klass: naturminne
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: ramsar_vatmarker
+        name: Ramsar_vatmarker
+        description: Ramsar-våtmarker (internationellt skyddade)
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/Ramsar_2018.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $RAMSAR_ID
+          klass: ramsar
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: skyddsvarda_statliga_skogar
+        name: Skyddsvarda_statliga_skogar
+        description: Skyddsvärda statliga skogar från Naturvårdsverket
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/Skog/Skyddsvarda_statliga_skogar.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $ID
+          klass: skyddsvard_statlig_skog
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: skogliga_vardekarnor
+        name: Skogliga_vardekarnor
+        description: Skogliga värdekärnor nationell analys (314 MB)
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/Skog/analys_nationellt.zip
+        enabled: false
+        field_mapping:
+          source_id_column: $OBJECTID
+          klass: vardekarna
+          grupp:
+          typ:
+          leverantor: nvv
+
+      # ========================================================================
+      # SGU (Sveriges Geologiska Undersökning)
+      # ========================================================================
+
+      - id: jordarter25k-100k
+        name: jordarter25k-100k
+        description: jordarter25k-100k från SGU
+        typ: sgu_gpkg
+        plugin: zip_geopackage
+        url: https://resource.sgu.se/data/oppnadata/jordarter25k-100k/jordarter25k-100k.zip
+        enabled: false
+        field_mapping:
+          source_id_column: $fid
+          klass: jordart
+          grupp:
+          typ:
+          leverantor: sgu
+
+      - id: torvlagerfoljder
+        name: torvlagerfoljder
+        description: torvlagerfoljder från SGU
+        typ: sgu_gpkg
+        plugin: zip_geopackage
+        url: https://resource.sgu.se/data/oppnadata/torvlagerfoljder/torvlagerfoljder.zip
+        enabled: true
+        field_mapping:
+          source_id_column: $id
+          klass: torvlagerfoljd
+          grupp:
+          typ:
+          leverantor: sgu
+
+      # ========================================================================
+      # ÖVRIGA
+      # ========================================================================
+
+      - id: Vardefullavatten
+        name: Värdefulla vatten - Levande sjöar och vattendrag
+        description: Levande sjöar och vattendrag från Havs- och vattenmyndigheten
+        typ: hav_wfs
+        plugin: wfs_geopandas
+        url: http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows
+        layer: vardefulla-vatten:levande-sjoar-vattendrag
+        enabled: false # Inaktiverad - WFS-server returnerar trasigt JSON
+        paginate: true
+        page_size: 50
+        max_features: 500
+        field_mapping:
+          source_id_column:
+          klass: vardefullavatten
+          grupp:
+          typ:
+          leverantor: hav
+
+      - id: Forsok
+        name: Forsok
+        description: Forsok från silvaboreal, kod 116 i GISS
+        typ: slu_gpkg
+        plugin: wfs
+        url: https://wms.slu.se/silvaboreal/esf/ows
+        enabled: false
+        field_mapping:
+          source_id_column:
+          klass: forsok
+          grupp:
+          typ:
+          leverantor: slu
+
+      - id: dikningsforetagskartan
+        name: Dikningsforetagskartan
+        description: Dikningsföretag för skogsmark
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/diken/Dikningsforetagskartan.zip
+        enabled: false
+        status: källan finns ej
+        field_mapping:
+          source_id_column:
+          klass: dikningsforetag
+          grupp:
+          typ:
+          leverantor: nvv
+
+      # ========================================================================
+      # LOKALA DATASET
+      # ========================================================================
+
+      - id: lokalt_dataset
+        name: lokalt dataset
+        description: lokalt dataset från GISS GeoPackage
+        typ: lokal_gpkg
+        plugin: zip_geopackage
+        url: /app/data/lokalt.gpkg.zip
+        layer: GAVD
+        enabled: false
+        field_mapping:
+          source_id_column:
+          klass: klass
+          grupp:
+          typ:
+          leverantor: intern
 
   # ============================================================================
-  # NATURVÅRDSVERKET (nvv)
+  # PIPELINE: avdelning
+  # SQL-templates: sql/migrations/aaa_avdelning/
   # ============================================================================
-
-  - id: nationalparker
-    name: Nationalparker
-    description: Nationalparker från naturvardsverket, kod 101 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NP.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: nationalpark
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: naturreservat
-    name: Naturreservat
-    description: Naturreservat från naturvardsverket, kod 102 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NR.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: naturreservat
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: natura2000_sci_ac
-    name: Natura2000_SCI AC
-    description: Natura2000 från naturvardsverket, kod 103 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-    shp_filname: SCI_AC_lan.shp
-    enabled: true
-    field_mapping:
-      source_id_column: $SITE_CODE
-      klass: natura2000_sci
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: natura2000_sci_alvar_bd
-    name: Natura2000_SCI alvar BD
-    description: Natura2000 från naturvardsverket, kod 103 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-    shp_filname: SCI_alvar_BD_lan.shp
-    enabled: true
-    field_mapping:
-      source_id_column: $SITE_CODE
-      klass: natura2000_sci
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: natura2000_sci_ej_alvar_rikstackande
-    name: Natura2000_SCI ej alvar rikstäckande
-    description: Natura2000 från naturvardsverket, kod 103 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-    shp_filname: SCI_ej_alvar_rikstackande.shp
-    enabled: true
-    field_mapping:
-      source_id_column: $SITE_CODE
-      klass: natura2000_sci
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: natura2000_spa
-    name: Natura2000_SPA
-    description: Natura2000 från naturvardsverket, kod 103 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $SITE_CODE
-      klass: natura2000_spa
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: naturvardsavtal
-    name: Naturvardsavtal
-    description: Naturvardsavtal från naturvardsverket, kod 104 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVA.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $geodb_oid
-      klass: naturvardsavtal
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: biotopskydd
-    name: Biotopskydd
-    description: Biotopskydd från naturvardsverket, kod 105 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/OBO.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: biotopskydd
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: vso
-    name: VSO
-    description: VSO från naturvardsverket, kod 106 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/VSO.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: vso
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: Naturvardsomrade
-    name: Naturvardsomrade
-    description: Naturvardsomrade från naturvardsverket, kod 118 i GISS
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NVO.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: naturvardsomrade
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: kulturreservat
-    name: Kulturreservat
-    description: Kulturreservat från Naturvårdsverket
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/KR.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: kulturreservat
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: naturminnen_punkt
-    name: Naturminnen punkt
-    description: Naturminnen från Naturvårdsverket
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
-    shp_filename: NM_point.shp
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: naturminne
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: naturminnen_ytor
-    name: Naturminnen ytor
-    description: Naturminnen från Naturvårdsverket
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/NM.zip
-    shp_filename: NM_polygon.shp
-    enabled: true
-    field_mapping:
-      source_id_column: $NVRID
-      klass: naturminne
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: ramsar_vatmarker
-    name: Ramsar_vatmarker
-    description: Ramsar-våtmarker (internationellt skyddade)
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/Ramsar_2018.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $RAMSAR_ID
-      klass: ramsar
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: skyddsvarda_statliga_skogar
-    name: Skyddsvarda_statliga_skogar
-    description: Skyddsvärda statliga skogar från Naturvårdsverket
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/Skog/Skyddsvarda_statliga_skogar.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $ID
-      klass: skyddsvard_statlig_skog
-      grupp:
-      typ:
-      leverantor: nvv
-
-  - id: skogliga_vardekarnor
-    name: Skogliga_vardekarnor
-    description: Skogliga värdekärnor nationell analys (314 MB)
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/Skog/analys_nationellt.zip
-    enabled: false
-    field_mapping:
-      source_id_column: $OBJECTID
-      klass: vardekarna
-      grupp:
-      typ:
-      leverantor: nvv
-
-  # ============================================================================
-  # SGU (Sveriges Geologiska Undersökning)
-  # ============================================================================
-
-  - id: jordarter25k-100k
-    name: jordarter25k-100k
-    description: jordarter25k-100k från SGU
-    typ: sgu_gpkg
-    plugin: zip_geopackage
-    url: https://resource.sgu.se/data/oppnadata/jordarter25k-100k/jordarter25k-100k.zip
-    enabled: false
-    field_mapping:
-      source_id_column: $fid
-      klass: jordart
-      grupp:
-      typ:
-      leverantor: sgu
-
-  - id: torvlagerfoljder
-    name: torvlagerfoljder
-    description: torvlagerfoljder från SGU
-    typ: sgu_gpkg
-    plugin: zip_geopackage
-    url: https://resource.sgu.se/data/oppnadata/torvlagerfoljder/torvlagerfoljder.zip
-    enabled: true
-    field_mapping:
-      source_id_column: $id
-      klass: torvlagerfoljd
-      grupp:
-      typ:
-      leverantor: sgu
-
-  # ============================================================================
-  # ÖVRIGA
-  # ============================================================================
-
-  - id: Vardefullavatten
-    name: Värdefulla vatten - Levande sjöar och vattendrag
-    description: Levande sjöar och vattendrag från Havs- och vattenmyndigheten
-    typ: hav_wfs
-    plugin: wfs_geopandas
-    url: http://geodata.havochvatten.se/geoservices/vardefulla-vatten/ows
-    layer: vardefulla-vatten:levande-sjoar-vattendrag
-    enabled: false  # Inaktiverad - WFS-server returnerar trasigt JSON
-    # WFS-specifika inställningar för stora datasets
-    paginate: true       # Använd paginering (chunks)
-    page_size: 50        # Mycket litet pga trasig WFS-server
-    max_features: 500    # Begränsa totalt (ta bort när det fungerar)
-    field_mapping:
-      source_id_column:
-      klass: vardefullavatten
-      grupp:
-      typ:
-      leverantor: hav
-
-  - id: Forsok
-    name: Forsok
-    description: Forsok från silvaboreal, kod 116 i GISS
-    typ: slu_gpkg
-    plugin: wfs
-    url: https://wms.slu.se/silvaboreal/esf/ows
-    enabled: false
-    field_mapping:
-      source_id_column:
-      klass: forsok
-      grupp:
-      typ:
-      leverantor: slu
-
-  - id: dikningsforetagskartan
-    name: Dikningsforetagskartan
-    description: Dikningsföretag för skogsmark
-    typ: naturvardsverket_shp
-    plugin: zip_shapefile
-    url: https://geodata.naturvardsverket.se/nedladdning/diken/Dikningsforetagskartan.zip
-    enabled: false
-    status: källan finns ej
-    field_mapping:
-      source_id_column:
-      klass: dikningsforetag
-      grupp:
-      typ:
-      leverantor: nvv
-
-  # ============================================================================
-  # LOKALA DATASET
-  # ============================================================================
-
-  - id: lokalt_dataset
-    name: lokalt dataset
-    description: lokalt dataset från GISS GeoPackage
-    typ: lokal_gpkg
-    plugin: zip_geopackage
-    url: /app/data/lokalt.gpkg.zip
-    layer: GAVD
-    enabled: false
-    field_mapping:
-      source_id_column:
-      klass: klass
-      grupp:
-      typ:
-      leverantor: intern
+  - id: avdelning
+    name: Avdelning
+    datasets:
+      - id: underlag_taktplan
+        name: Underlag taktiskplan
+        description: lokalt dataset från GISS GeoPackage
+        typ: lokal_gpkg
+        plugin: zip_geopackage
+        url: ./input_data/underlag_taktiskplan.zip
+        layer: UNDERLAG_TAKTPLAN
+        enabled: true
+        field_mapping:
+          source_id_column: $BETECKNING
+          klass: klass
+          grupp:
+          typ:
+          leverantor: intern
+          area: $NETTOHA
+          volym: $M3FUB_HA

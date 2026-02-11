@@ -152,3 +152,62 @@ Definiera kategorierna baserat på dina datasets
 Skapa SQL-templates för kategori-tabellerna
 Generera post-merge SQL som bygger wide tables från mart.h3_index
 Optimera queries för typiska analyser
+
+## Flera olia piplinetyper
+
+Det jag har byggt hittills är ju för att hantera externa restriktioner.
+om man med samma grun vill hatera flera olika typer av piplines kan man då gära så här:
+
+Nu:
+
+hela piplinen beskrivs av en serie *.sql:
+.
+├── 001_db_extensions.sql
+├── 002_db_schemas.sql
+├── 003_db_makros.sql
+├── 004_staging_transform_template.sql
+├── 005_staging_normalisering_template.sql
+├── 006_mart_h3_cells_template.sql
+├── 007_mart_compact_h3_cells_template.sql
+└── 100_mart_h3_index_merged.sql
+
+Ändra till:
+
+piplinens beskrivs fortfarande av *.sql.
+de som är gemensamma ligger i ./sql sedan har resp pipline en egen mapp som innehåller resp *.sql. namnsättningens prefix nedan är föra att få de ligga i rätt ordning 
+
+.
+├── 001_db_extensions.sql
+├── 002_db_schemas.sql
+├── 003_db_makros.sql
+├── 004_staging_transform_template.sql
+├── aaa_avdelning
+    ├── 001_*_template.sql
+    ├── 002_*_template.sql
+    ├── 003_*_template.sql
+    └── 100_*_merged.sql
+└── aab_ext_restr
+    ├── 001_staging_normalisering_template.sql
+    ├── 002_mart_h3_cells_template.sql
+    ├── 003_mart_compact_h3_cells_template.sql
+    └── 100_mart_h3_index_merged.sql
+├── x01_db_extensions.sql
+├── x02_db_schemas.sql
+├── x03_db_makros.sql
+
+och att man i resp config anger vilken pipline som skall användas. tex genom att ange tex "aab_ext_restr"
+
+- id: avverkningsanmalningar
+    name: Avverkningsanmalningar
+    description: Avverkningsanmälda områden från Skogsstyrelsen
+    typ: skogsstyrelsen_gpkg
+    plugin: zip_geopackage
+    url: https://geodpags.skogsstyrelsen.se/geodataport/data/sksAvverkAnm_gpkg.zip
+    enabled: true
+    pipeline: aab_ext_restr
+    field_mapping:
+      source_id_column: $beteckn
+      klass: avverkningsanmalan
+      grupp:
+      typ:
+      leverantor: sks

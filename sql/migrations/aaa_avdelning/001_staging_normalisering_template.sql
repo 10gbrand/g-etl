@@ -1,5 +1,6 @@
 -- Staging-normalisering för {{ dataset_id }}
--- Schema: {{ schema }} (baserat på filnummer 005)
+-- Pipeline: ext_restr (aab_ext_restr/001)
+-- Schema: {{ schema }}
 -- Källa: {{ prev_schema }}.{{ dataset_id }}
 -- Normaliserar till enhetlig struktur
 -- Genereras automatiskt från datasets.yml
@@ -14,6 +15,8 @@ SELECT
     {{ grupp_expr }} AS grupp,
     {{ typ_expr }} AS typ,
     '{{ leverantor }}' AS leverantor,
+    {{ area_expr }} AS area,
+    {{ volym_expr }} AS volym,
     s._h3_index AS h3_center,
     s._h3_cells AS h3_cells,
     s._json_data AS json_data,

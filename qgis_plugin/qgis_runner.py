@@ -92,8 +92,10 @@ class QGISPipelineRunner:
     def list_datasets(self) -> List[Dict]:
         """Hämta tillgängliga datasets från config.
 
+        Stödjer både nytt format (pipelines: [...]) och gammalt (datasets: [...]).
+
         Returns:
-            Lista med dataset-konfigurationer.
+            Lista med dataset-konfigurationer (platt, med 'pipeline' injicerat).
         """
         _ensure_core_imports()
 
@@ -102,9 +104,23 @@ class QGISPipelineRunner:
             return []
 
         with open(config_path) as f:
-            config = yaml.safe_load(f)
+            data = yaml.safe_load(f)
 
-        return config.get("datasets", [])
+        if not data:
+            return []
+
+        # Nytt format: pipelines-grupperat
+        if "pipelines" in data:
+            result = []
+            for pipeline in data["pipelines"]:
+                pipeline_id = pipeline.get("id", "")
+                for ds in pipeline.get("datasets", []):
+                    ds["pipeline"] = pipeline_id
+                    result.append(ds)
+            return result
+
+        # Gammalt format: platt lista
+        return data.get("datasets", [])
 
     def list_dataset_types(self) -> List[str]:
         """Hämta unika dataset-typer.
