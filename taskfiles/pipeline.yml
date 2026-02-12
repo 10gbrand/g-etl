@@ -4,7 +4,7 @@ tasks:
   run:
     desc: Kör hela pipelinen (extract + transform)
     cmds:
-      - uv run python -m g_etl.pipeline
+      - uv run python -m g_etl.pipeline {{.CLI_ARGS}}
 
   extract:
     desc: Kör bara extract (hämta data)

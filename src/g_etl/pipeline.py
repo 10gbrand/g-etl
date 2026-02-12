@@ -61,6 +61,7 @@ class Pipeline:
         on_log: Callable[[str], None] | None = None,
         keep_staging: bool = False,
         save_sql: bool = False,
+        auto_export: bool = False,
     ) -> PipelineResult:
         """Kör pipeline med parallell exekvering.
 
@@ -74,6 +75,7 @@ class Pipeline:
             on_log: Callback för loggmeddelanden
             keep_staging: Behåll staging-tabeller i warehouse efter merge
             save_sql: Spara renderade SQL-filer till data/log_sql/
+            auto_export: Exportera mart-tabeller till GeoParquet efter körning
         """
         # Kör async-metoden synkront
         return asyncio.run(
@@ -85,6 +87,7 @@ class Pipeline:
                 on_log=on_log,
                 keep_staging=keep_staging,
                 save_sql=save_sql,
+                auto_export=auto_export,
             )
         )
 
@@ -97,6 +100,7 @@ class Pipeline:
         on_log: Callable[[str], None] | None = None,
         keep_staging: bool = False,
         save_sql: bool = False,
+        auto_export: bool = False,
     ) -> PipelineResult:
         """Asynkron pipeline-körning med parallella processer."""
         if on_log:
@@ -247,6 +251,24 @@ class Pipeline:
 
         await self._runner.run_merged_sql(on_log=on_log)
 
+        # === AUTO-EXPORT ===
+        if auto_export and self._runner._conn:
+            if on_log:
+                on_log("")
+                on_log("[Pipeline] === AUTO-EXPORT (GeoParquet) ===")
+
+            from g_etl.export import export_mart_tables
+
+            output_dir = settings.DATA_DIR / "output"
+            exported = export_mart_tables(
+                conn=self._runner._conn,
+                output_dir=output_dir,
+                export_format="geoparquet",
+                on_log=on_log,
+            )
+            if on_log:
+                on_log(f"[Pipeline] Exporterade {len(exported)} filer till {output_dir}/")
+
         # Sammanfattning
         success = datasets_failed == 0 and merge_success
         message = (
@@ -307,6 +329,11 @@ def main():
         action="store_true",
         help="Spara renderade SQL-filer till data/log_sql/",
     )
+    parser.add_argument(
+        "--auto-export",
+        action="store_true",
+        help="Exportera mart-tabeller till GeoParquet efter pipeline-körning",
+    )
 
     args = parser.parse_args()
 
@@ -359,6 +386,7 @@ def main():
             on_log=log,
             keep_staging=args.keep_staging,
             save_sql=args.save_sql,
+            auto_export=args.auto_export,
         )
 
         if file_logger and file_logger.log_file:

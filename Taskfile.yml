@@ -18,10 +18,10 @@ tasks:
     cmds:
       - uv run harlequin data/warehouse.duckdb
 
-  hq_parquet:
-    desc:
+  hq_f:
+    desc: Öppna Parquet-fil/Duckdb-fil i Harlequin (task hq_parquet -- <fil>)
     cmds:
-      - uv run harlequin /home/mate01/g-etl_test/data/raw/underlag_taktplan.parquet
+      - uv run harlequin {{.CLI_ARGS}}
 
   sf:
     desc: Starta Superfile (filhanterare)

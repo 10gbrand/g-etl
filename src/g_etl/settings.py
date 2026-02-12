@@ -21,6 +21,9 @@ class Settings:
     RAW_DIR: Path = Path("data/raw")
     TEMP_DIR: Path = Path("data/temp")  # Temporära per-dataset DBs
     INPUT_DATA_DIR: Path = Path("input_data")  # Lokala geodatafiler
+    EXPORT_DIR: Path = Path("data/export")
+    HEATMAPS_DIR: Path = Path("data/heatmaps")
+    LOG_SQL_DIR: Path = Path("data/log_sql")
     LOGS_DIR: Path = Path("logs")
     LOG_SQL_DIR: Path = Path("data/log_sql")  # Renderade SQL-filer för felsökning
     SQL_DIR: Path = Path("sql")

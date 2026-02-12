@@ -23,6 +23,7 @@ from g_etl.admin.services.db_session import (
     cleanup_all_databases,
     cleanup_all_logs,
     cleanup_all_parquet,
+    cleanup_data_subdirs,
     get_data_stats,
 )
 from g_etl.admin.services.pipeline_runner import (
@@ -297,6 +298,7 @@ class PipelineScreen(Screen):
                 yield Label("  Alternativ:")
                 yield Checkbox("Behåll staging", id="keep-staging", value=False)
                 yield Checkbox("Spara SQL", id="save-sql", value=False)
+                yield Checkbox("Auto-export", id="auto-export", value=False)
 
         with Horizontal(id="main-content"):
             with Container(id="datasets-panel"):
@@ -418,6 +420,7 @@ class PipelineScreen(Screen):
         run_extract, run_staging, run_mart = self.get_selected_phases()
         keep_staging = self.query_one("#keep-staging", Checkbox).value
         save_sql = self.query_one("#save-sql", Checkbox).value
+        auto_export = self.query_one("#auto-export", Checkbox).value
         if not any([run_extract, run_staging, run_mart]):
             self.log_message("Ingen fas vald - välj minst en fas att köra")
             return
@@ -643,6 +646,29 @@ class PipelineScreen(Screen):
                     on_log=lambda msg: self.log_message(msg),
                 )
 
+            # === FAS 5: AUTO-EXPORT ===
+            if auto_export and self._running and self.runner._conn:
+                progress.set_phase("5. Export (GeoParquet)")
+                self.log_message("Exporterar mart-tabeller till GeoParquet...")
+
+                from g_etl.export import export_mart_tables
+
+                output_dir = Path("data/output")
+
+                def do_export():
+                    return export_mart_tables(
+                        conn=self.runner._conn,
+                        output_dir=output_dir,
+                        export_format="geoparquet",
+                        on_log=lambda msg: self.log_message(msg),
+                    )
+
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                exported = await loop.run_in_executor(None, do_export)
+                self.log_message(f"Exporterade {len(exported)} filer till {output_dir}/")
+
         elif not run_any_sql:
             self.log_message("Hoppar över SQL-faserna")
 
@@ -718,13 +744,14 @@ class PipelineScreen(Screen):
         self.app.exit()
 
     async def action_clear_data(self) -> None:
-        """Rensa alla datafiler (databaser, parquet och loggar)."""
+        """Rensa alla datafiler (databaser, parquet, loggar, export, heatmaps, log_sql)."""
         # Visa aktuell statistik
         stats = get_data_stats()
         self.log_message(
             f"Nuvarande data: {stats['db_count']} databaser ({stats['db_size_mb']} MB), "
             f"{stats['parquet_count']} parquet ({stats['parquet_size_mb']} MB), "
-            f"{stats['log_count']} loggar ({stats['log_size_mb']} MB)"
+            f"{stats['log_count']} loggar ({stats['log_size_mb']} MB), "
+            f"{stats['subdir_count']} övriga filer ({stats['subdir_size_mb']} MB)"
         )
 
         # Rensa databaser
@@ -742,11 +769,16 @@ class PipelineScreen(Screen):
         if log_count > 0:
             self.log_message(f"Tog bort {log_count} loggfiler ({log_size} MB)")
 
-        total_count = db_count + pq_count + log_count
+        # Rensa export, heatmaps, log_sql
+        sub_count, sub_size = cleanup_data_subdirs()
+        if sub_count > 0:
+            self.log_message(f"Tog bort {sub_count} filer från export/heatmaps/log_sql ({sub_size} MB)")
+
+        total_count = db_count + pq_count + log_count + sub_count
         if total_count == 0:
             self.log_message("Inga filer att rensa")
         else:
-            total_size = db_size + pq_size + log_size
+            total_size = db_size + pq_size + log_size + sub_size
             self.log_message(f"Totalt rensat: {total_count} filer ({total_size} MB)")
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:

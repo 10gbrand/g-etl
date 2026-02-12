@@ -227,6 +227,38 @@ def cleanup_all_logs() -> tuple[int, int]:
     return removed_count, total_size // (1024 * 1024)
 
 
+def cleanup_data_subdirs() -> tuple[int, int]:
+    """Ta bort alla filer i data/export, data/heatmaps och data/log_sql.
+
+    Returns:
+        Tuple med (antal borttagna filer, total storlek i MB)
+    """
+    import shutil
+
+    removed_count = 0
+    total_size = 0
+
+    for dir_path in [settings.EXPORT_DIR, settings.HEATMAPS_DIR, settings.LOG_SQL_DIR]:
+        if not dir_path.exists():
+            continue
+        for item in dir_path.iterdir():
+            try:
+                if item.is_dir():
+                    dir_size = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
+                    dir_count = sum(1 for f in item.rglob("*") if f.is_file())
+                    total_size += dir_size
+                    removed_count += dir_count
+                    shutil.rmtree(item)
+                else:
+                    total_size += item.stat().st_size
+                    item.unlink()
+                    removed_count += 1
+            except OSError:
+                pass
+
+    return removed_count, total_size // (1024 * 1024)
+
+
 def get_data_stats() -> dict:
     """Hämta statistik om data-filer.
 
@@ -252,6 +284,16 @@ def get_data_stats() -> dict:
     log_count = len(log_files)
     log_size = sum(f.stat().st_size for f in log_files) // (1024 * 1024)
 
+    # Subdir-filer (export, heatmaps, log_sql)
+    subdir_count = 0
+    subdir_size = 0
+    for dir_path in [settings.EXPORT_DIR, settings.HEATMAPS_DIR, settings.LOG_SQL_DIR]:
+        if dir_path.exists():
+            files = [f for f in dir_path.rglob("*") if f.is_file()]
+            subdir_count += len(files)
+            subdir_size += sum(f.stat().st_size for f in files)
+    subdir_size = subdir_size // (1024 * 1024)
+
     return {
         "db_count": db_count,
         "db_size_mb": db_size,
@@ -259,4 +301,6 @@ def get_data_stats() -> dict:
         "parquet_size_mb": parquet_size,
         "log_count": log_count,
         "log_size_mb": log_size,
+        "subdir_count": subdir_count,
+        "subdir_size_mb": subdir_size,
     }
