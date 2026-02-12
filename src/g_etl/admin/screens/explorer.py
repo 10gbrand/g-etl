@@ -24,9 +24,9 @@ from textual.widgets.selection_list import Selection
 
 from g_etl.admin.widgets.ascii_map import BrailleMapWidget
 from g_etl.export import export_mart_tables
-from g_etl.pipeline import FileLogger
 from g_etl.services.db_session import get_current_db_path
 from g_etl.settings import settings
+from g_etl.utils.logging import FileLogger
 
 
 class TableInfo(Static):

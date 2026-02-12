@@ -24,7 +24,6 @@ from g_etl.admin.widgets.multi_progress import (
     TaskProgress,
     TaskStatus,
 )
-from g_etl.pipeline import FileLogger
 from g_etl.services.db_session import (
     cleanup_all_databases,
     cleanup_all_logs,
@@ -37,6 +36,7 @@ from g_etl.services.pipeline_runner import (
     PipelineRunner,
 )
 from g_etl.settings import settings
+from g_etl.utils.logging import FileLogger
 
 
 class DatasetRow(Static):
