@@ -318,7 +318,7 @@ g-etl/
 └── logs/                  # Pipeline-loggar
 ```
 
-**CLI och TUI delar samma `PipelineRunner`** i `src/g_etl/admin/services/pipeline_runner.py`.
+**CLI och TUI delar samma `PipelineRunner`** i `src/g_etl/services/pipeline_runner.py`.
 Det finns ingen duplicerad pipeline-logik.
 
 ```text
@@ -332,7 +332,7 @@ CLI/TUI-arkitektur:
            └────────────┬───────────────┘
                         ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  PipelineRunner (admin/services/pipeline_runner.py)             │
+│  PipelineRunner (services/pipeline_runner.py)                    │
 │  ├── run_parallel_extract()    # Parallell datahämtning        │
 │  ├── run_parallel_transform()  # Parallell SQL-transformering  │
 │  ├── merge_databases()         # Kombinera temp-DBs            │

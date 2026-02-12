@@ -19,23 +19,23 @@ from textual.widgets import (
 )
 
 from g_etl.admin.models.dataset import Dataset, DatasetConfig, DatasetStatus
-from g_etl.admin.services.db_session import (
-    cleanup_all_databases,
-    cleanup_all_logs,
-    cleanup_all_parquet,
-    cleanup_data_subdirs,
-    get_data_stats,
-)
-from g_etl.admin.services.pipeline_runner import (
-    MockPipelineRunner,
-    PipelineRunner,
-)
 from g_etl.admin.widgets.multi_progress import (
     MultiProgressWidget,
     TaskProgress,
     TaskStatus,
 )
 from g_etl.pipeline import FileLogger
+from g_etl.services.db_session import (
+    cleanup_all_databases,
+    cleanup_all_logs,
+    cleanup_all_parquet,
+    cleanup_data_subdirs,
+    get_data_stats,
+)
+from g_etl.services.pipeline_runner import (
+    MockPipelineRunner,
+    PipelineRunner,
+)
 from g_etl.settings import settings
 
 
@@ -451,7 +451,7 @@ class PipelineScreen(Screen):
 
         from pathlib import Path
 
-        from g_etl.admin.services.pipeline_runner import ParallelExtractResult
+        from g_etl.services.pipeline_runner import ParallelExtractResult
 
         # Skapa runner
         if self.mock_mode:
@@ -673,7 +673,7 @@ class PipelineScreen(Screen):
             self.log_message("Hoppar över SQL-faserna")
 
         # Uppdatera den fasta warehouse.duckdb med senaste körningen
-        from g_etl.admin.services.db_session import update_current_db
+        from g_etl.services.db_session import update_current_db
 
         current_db = update_current_db()
         if current_db:

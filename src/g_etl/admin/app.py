@@ -20,7 +20,7 @@ from g_etl.admin.screens.explorer import ExplorerScreen
 from g_etl.admin.screens.h3_query import H3QueryScreen
 from g_etl.admin.screens.migrations import MigrationsScreen
 from g_etl.admin.screens.pipeline import PipelineScreen
-from g_etl.admin.services.db_session import cleanup_old_databases, get_session_db_path
+from g_etl.services.db_session import cleanup_old_databases, get_session_db_path
 
 
 class AdminApp(App):

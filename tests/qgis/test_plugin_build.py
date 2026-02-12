@@ -149,6 +149,7 @@ class TestPluginBuildIntegration:
                 "settings.py",
                 "sql_generator.py",
                 "export.py",
+                "services/pipeline_runner.py",
                 "admin/services/pipeline_runner.py",
                 "plugins/__init__.py",
                 "migrations/migrator.py",

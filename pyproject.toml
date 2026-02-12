@@ -34,7 +34,12 @@ viz = [
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.6.0", "pytest>=8.0.0", "harlequin>=2.0.0"]
+dev = [
+    "ruff>=0.6.0",
+ "pytest>=8.0.0",
+ "harlequin>=2.0.0",
+ "pydeps>=3.0.2",
+]
 
 [tool.ruff]
 line-length = 100

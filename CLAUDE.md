@@ -139,7 +139,8 @@ OBS: Staging-scheman skapas dynamiskt. Root-templates genererar `staging_NNN`, p
 
 **Nyckelkomponenter:**
 
-- `src/g_etl/admin/services/pipeline_runner.py` - **Gemensam pipeline-logik** (parallell extract/transform/merge)
+- `src/g_etl/services/pipeline_runner.py` - **Gemensam pipeline-logik** (parallell extract/transform/merge)
+- `src/g_etl/services/db_session.py` - Databashantering (sessions, cleanup, statistik)
 - `src/g_etl/pipeline.py` - CLI-wrapper som anropar PipelineRunner
 - `src/g_etl/admin/app.py` - TUI-applikation (Textual) som anropar PipelineRunner
 - `src/g_etl/plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)

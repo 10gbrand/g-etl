@@ -286,7 +286,7 @@ pipelines:
         typ: naturvardsverket_shp
         plugin: zip_shapefile
         url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-        shp_filname: SCI_AC_lan.shp
+        shp_filename: SCI_AC_lan.shp
         enabled: true
         field_mapping:
           source_id_column: $SITE_CODE
@@ -301,7 +301,7 @@ pipelines:
         typ: naturvardsverket_shp
         plugin: zip_shapefile
         url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-        shp_filname: SCI_alvar_BD_lan.shp
+        shp_filename: SCI_alvar_BD_lan.shp
         enabled: true
         field_mapping:
           source_id_column: $SITE_CODE
@@ -316,7 +316,7 @@ pipelines:
         typ: naturvardsverket_shp
         plugin: zip_shapefile
         url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-        shp_filname: SCI_ej_alvar_rikstackande.shp
+        shp_filename: SCI_ej_alvar_rikstackande.shp
         enabled: true
         field_mapping:
           source_id_column: $SITE_CODE
@@ -597,7 +597,7 @@ pipelines:
         plugin: zip_geopackage
         url: ./input_data/underlag_taktiskplan.zip
         layer: UNDERLAG_TAKTPLAN
-        enabled: true
+        enabled: false
         field_mapping:
           source_id_column: $BETECKNING
           klass: klass

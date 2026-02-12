@@ -219,22 +219,24 @@ class GeoPackagePlugin(SourcePlugin):
             kwargs = {}
             if layer:
                 kwargs["layer"] = layer
-            meta, table = pyogrio.read_arrow(str(gpkg_path), **kwargs)
+            meta, arrow_tbl = pyogrio.read_arrow(str(gpkg_path), **kwargs)
 
             # Hitta geometrikolumn
             geom_cols = meta.get("geometry_columns", [])
             geom_col = geom_cols[0] if geom_cols else "wkb_geometry"
 
             # Konvertera komplexa geometrier via shapely
-            wkb_array = table.column(geom_col).to_pylist()
+            wkb_array = arrow_tbl.column(geom_col).to_pylist()
             geoms = shapely.from_wkb(wkb_array)
 
             simplified = shapely.to_wkb(
                 [self._simplify_geometry(g) if g is not None else None for g in geoms]
             )
 
-            col_idx = table.schema.get_field_index(geom_col)
-            table = table.set_column(col_idx, geom_col, pa.array(simplified, type=pa.binary()))
+            col_idx = arrow_tbl.schema.get_field_index(geom_col)
+            arrow_tbl = arrow_tbl.set_column(
+                col_idx, geom_col, pa.array(simplified, type=pa.binary())
+            )
 
             conn.execute(f"DROP TABLE IF EXISTS raw.{table_name}")
             conn.execute(
@@ -243,11 +245,11 @@ class GeoPackagePlugin(SourcePlugin):
                 SELECT
                     * EXCLUDE ("{geom_col}"),
                     ST_GeomFromWKB("{geom_col}") AS geom
-                FROM table
+                FROM arrow_tbl
             """
             )
 
-            return table.num_rows
+            return arrow_tbl.num_rows
 
         except Exception as e:
             self._log(f"Pyogrio fallback failed: {e}", on_log)

@@ -94,9 +94,9 @@ class WfsGeopandasPlugin(SourcePlugin):
 
                 try:
                     # Läs med PyOGRIO som Arrow-tabell (ingen geopandas behövs)
-                    meta, table = pyogrio.read_arrow(wfs_url)
+                    meta, arrow_tbl = pyogrio.read_arrow(wfs_url)
 
-                    if table.num_rows == 0:
+                    if arrow_tbl.num_rows == 0:
                         self._log("Inga fler features", on_log)
                         break
 
@@ -105,9 +105,9 @@ class WfsGeopandasPlugin(SourcePlugin):
                         geom_cols = meta.get("geometry_columns", [])
                         geom_col_name = geom_cols[0] if geom_cols else "wkb_geometry"
 
-                    chunk_rows = table.num_rows
+                    chunk_rows = arrow_tbl.num_rows
                     total_rows += chunk_rows
-                    all_tables.append(table)
+                    all_tables.append(arrow_tbl)
 
                     self._log(
                         f"Chunk {chunk_num}: +{chunk_rows} rader (totalt {total_rows})",

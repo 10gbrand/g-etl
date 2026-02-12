@@ -156,6 +156,11 @@ jobs:
             --nofollow-import-to=shapely \
             --nofollow-import-to=fiona \
             --nofollow-import-to=numpy \
+            --nofollow-import-to=scipy \
+            --nofollow-import-to=cv2 \
+            --nofollow-import-to=torch \
+            --nofollow-import-to=tensorflow \
+            --nofollow-import-to=pyodbc \
             --assume-yes-for-downloads \
             g_etl/admin/app.py
 

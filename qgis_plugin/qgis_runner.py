@@ -47,11 +47,11 @@ def _ensure_core_imports():
 
     import yaml as _yaml
 
-    from g_etl.admin.services.pipeline_runner import (
+    from g_etl.export import export_mart_tables
+    from g_etl.services.pipeline_runner import (
         PipelineEvent,
         PipelineRunner,
     )
-    from g_etl.export import export_mart_tables
     from g_etl.settings import settings
     from g_etl.utils.logging import FileLogger
 

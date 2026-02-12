@@ -57,6 +57,35 @@ tasks:
       - cmd: git push origin :refs/tags/{{.VERSION}} || true
       - echo "Klar!"
 
+  smoketest:
+    desc: Lokalt smoke test - verifiera att appen startar utan exkluderade paket (pyogrio, pyarrow, etc.)
+    cmds:
+      - |
+        echo "=== Smoke test: importerar app utan exkluderade paket ==="
+        PYTHONPATH=src uv run python -c "
+        import sys
+
+        # Blockera samma paket som Nuitka exkluderar
+        blocked = [
+            'geopandas', 'pandas', 'pyarrow', 'pyogrio',
+            'shapely', 'fiona', 'numpy', 'scipy', 'pyodbc',
+        ]
+
+        class BlockImporter:
+            def find_module(self, name, path=None):
+                if name.split('.')[0] in blocked:
+                    return self
+            def load_module(self, name):
+                raise ModuleNotFoundError(f'BLOCKED by smoke test: {name}')
+
+        sys.meta_path.insert(0, BlockImporter())
+
+        # Importera appen (samma entry point som Nuitka bygger)
+        from g_etl.admin import app
+        print('OK: Alla imports klarade smoke test!')
+        "
+    silent: true
+
   trigger:
     desc: "Trigga bygge för befintlig tag (ex: task release:trigger -- v0.1.2)"
     vars:

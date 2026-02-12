@@ -269,7 +269,7 @@ class ZipShapefilePlugin(SourcePlugin):
             self._log(f"Läser med pyogrio (encoding={encoding})...", on_log)
             self._progress(0.7, "Läser med pyogrio...", on_progress)
 
-            meta, table = pyogrio.read_arrow(str(shp_path), encoding=encoding)
+            meta, arrow_tbl = pyogrio.read_arrow(str(shp_path), encoding=encoding)
 
             # Hitta geometrikolumn
             geom_cols = meta.get("geometry_columns", [])
@@ -285,11 +285,11 @@ class ZipShapefilePlugin(SourcePlugin):
                 SELECT
                     * EXCLUDE ("{geom_col}"),
                     ST_GeomFromWKB("{geom_col}") AS geom
-                FROM table
+                FROM arrow_tbl
             """
             )
 
-            return table.num_rows
+            return arrow_tbl.num_rows
 
         except ImportError:
             self._log("pyogrio är inte installerat - kan inte använda fallback", on_log)

@@ -4,11 +4,15 @@ OBS: Kräver att warehouse.duckdb har initierats med H3-makron från 003_db_makr
 Kör 'task run' en gång för att skapa databas med alla nödvändiga makron.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import duckdb
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def query_polygon(

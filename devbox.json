@@ -8,7 +8,8 @@
     "kitty@latest",
     "superfile@latest",
     "nerdfonts@latest",
-    "gh@latest"
+    "gh@latest",
+    "graphviz@latest"
   ],
   "shell": {
     "init_hook": [
