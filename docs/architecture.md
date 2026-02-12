@@ -90,6 +90,8 @@ Varje dataset processas i en **egen temporär DuckDB-fil** för äkta parallelis
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+![deps.svg](./images/deps.svg)
+
 ## Detaljerat pipeline-flöde
 
 ### Steg 1: Extract (Plugins → raw.*)
