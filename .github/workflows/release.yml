@@ -152,6 +152,7 @@ jobs:
             --nofollow-import-to=geopandas \
             --nofollow-import-to=pandas \
             --nofollow-import-to=pyarrow \
+            --nofollow-import-to=pyogrio \
             --nofollow-import-to=shapely \
             --nofollow-import-to=fiona \
             --nofollow-import-to=numpy \

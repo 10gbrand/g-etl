@@ -1,9 +1,10 @@
 # Dockerfile för Nuitka-bygge av G-ETL Admin TUI (Linux x86_64)
 # Multi-stage build för att minimera storlek
 #
-# Geopandas/pyarrow är nu optional (lazy import) och exkluderas.
+# Pyogrio/pyarrow/shapely är optional (lazy import) och exkluderas.
 # De flesta datasets fungerar utan dem - de behövs bara för:
-# - MULTISURFACE-geometrier i GeoPackage (sällsynt)
+# - WFS-hämtning med pyogrio (wfs_geopandas-plugin)
+# - MULTISURFACE-geometrier i GeoPackage (sällsynt fallback)
 # - Encoding-problem i Shapefiles (sällsynt, DuckDB hanterar ofta detta)
 
 # === Stage 1: Bygg med Nuitka ===
@@ -23,7 +24,7 @@ RUN pip install uv && \
     uv pip install --system nuitka ordered-set zstandard
 
 # Installera ENDAST dependencies som TUI:n faktiskt behöver
-# (exkluderar geopandas, pyarrow, shapely - dessa är för plugins)
+# (exkluderar pyogrio, pyarrow, shapely, pandas - dessa är för plugins)
 RUN uv pip install --system \
     textual \
     duckdb \
@@ -52,6 +53,7 @@ RUN python -m nuitka \
     --nofollow-import-to=geopandas \
     --nofollow-import-to=pandas \
     --nofollow-import-to=pyarrow \
+    --nofollow-import-to=pyogrio \
     --nofollow-import-to=shapely \
     --nofollow-import-to=fiona \
     --nofollow-import-to=numpy \

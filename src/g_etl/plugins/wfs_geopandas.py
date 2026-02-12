@@ -4,8 +4,6 @@ from collections.abc import Callable
 from urllib.parse import urlencode
 
 import duckdb
-import pyarrow as pa
-import pyogrio
 import requests
 
 from g_etl.plugins.base import ExtractResult, SourcePlugin
@@ -60,6 +58,9 @@ class WfsGeopandasPlugin(SourcePlugin):
         self._progress(0.1, f"Hämtar från WFS: {layer}...", on_progress)
 
         try:
+            import pyarrow as pa
+            import pyogrio
+
             # Hämta data i chunks (Arrow-tabeller)
             all_tables = []
             geom_col_name = None
