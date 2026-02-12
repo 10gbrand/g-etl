@@ -772,7 +772,9 @@ class PipelineScreen(Screen):
         # Rensa export, heatmaps, log_sql
         sub_count, sub_size = cleanup_data_subdirs()
         if sub_count > 0:
-            self.log_message(f"Tog bort {sub_count} filer från export/heatmaps/log_sql ({sub_size} MB)")
+            self.log_message(
+                f"Tog bort {sub_count} filer från export/heatmaps/log_sql ({sub_size} MB)"
+            )
 
         total_count = db_count + pq_count + log_count + sub_count
         if total_count == 0:
