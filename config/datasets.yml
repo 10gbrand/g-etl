@@ -242,10 +242,10 @@ pipelines:
         url: https://pub.raa.se/nedladdning/datauttag/lamningar/l%c3%a4mningar_sverige.gpkg
         enabled: true
         field_mapping:
-          source_id_column: $Objektnr
+          source_id_column: $lamningsnr
           klass: fornlamning
-          grupp:
-          typ:
+          grupp: $antikv_bed
+          typ: $lamningstyp
           leverantor: raa
 
       # ========================================================================
@@ -325,13 +325,44 @@ pipelines:
           typ:
           leverantor: nvv
 
-      - id: natura2000_spa
-        name: Natura2000_SPA
+      - id: natura2000_spa_sci_alvar_ac
+        name: Natura2000_SPA SCI_alvar_AC
         description: Natura2000 från naturvardsverket, kod 103 i GISS
         typ: naturvardsverket_shp
         plugin: zip_shapefile
         url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
         enabled: true
+        shp_filename: SCI_alvar_AC_lan.shp
+        field_mapping:
+          source_id_column: $SITE_CODE
+          klass: natura2000_spa
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: natura2000_spa_sci_alvar_bd
+        name: Natura2000_SPA SCI_alvar_BD
+        description: Natura2000 från naturvardsverket, kod 103 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
+        enabled: true
+        shp_filename: SCI_alvar_BD_lan.shp
+        field_mapping:
+          source_id_column: $SITE_CODE
+          klass: natura2000_spa
+          grupp:
+          typ:
+          leverantor: nvv
+
+      - id: natura2000_spa_sci_ej_alvar_rikstackande
+        name: Natura2000_SPA SCI_ej_alvar_rikstackande
+        description: Natura2000 från naturvardsverket, kod 103 i GISS
+        typ: naturvardsverket_shp
+        plugin: zip_shapefile
+        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
+        enabled: true
+        shp_filename: SCI_ej_alvar_rikstackande.shp
         field_mapping:
           source_id_column: $SITE_CODE
           klass: natura2000_spa

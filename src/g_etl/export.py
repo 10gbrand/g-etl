@@ -394,6 +394,9 @@ def export_mart_tables(
 
     exported_files = []
 
+    # Minska minnesanvändning vid export av stora tabeller/vyer
+    conn.execute("SET preserve_insertion_order=false")
+
     for (table_name,) in tables:
         source_table = f"mart.{table_name}"
 
