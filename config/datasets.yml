@@ -245,7 +245,7 @@ pipelines:
           source_id_column: $lamningsnr
           klass: fornlamning
           grupp: $antikv_bed
-          typ: $lamningstyp
+          typ: $lamningtyp
           leverantor: raa
 
       # ========================================================================
@@ -280,13 +280,13 @@ pipelines:
           typ:
           leverantor: nvv
 
-      - id: natura2000_sci_ac
+      - id: natura2000_sci_alvar_ac
         name: Natura2000_SCI AC
         description: Natura2000 från naturvardsverket, kod 103 i GISS
         typ: naturvardsverket_shp
         plugin: zip_shapefile
         url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SCI_Rikstackande.zip
-        shp_filename: SCI_AC_lan.shp
+        shp_filename: SCI_alvar_AC_lan.shp
         enabled: true
         field_mapping:
           source_id_column: $SITE_CODE
@@ -325,44 +325,14 @@ pipelines:
           typ:
           leverantor: nvv
 
-      - id: natura2000_spa_sci_alvar_ac
-        name: Natura2000_SPA SCI_alvar_AC
+      - id: natura2000_SPA_Rikstackande
+        name: natura2000_SPA_Rikstackande
         description: Natura2000 från naturvardsverket, kod 103 i GISS
         typ: naturvardsverket_shp
         plugin: zip_shapefile
         url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
         enabled: true
-        shp_filename: SCI_alvar_AC_lan.shp
-        field_mapping:
-          source_id_column: $SITE_CODE
-          klass: natura2000_spa
-          grupp:
-          typ:
-          leverantor: nvv
-
-      - id: natura2000_spa_sci_alvar_bd
-        name: Natura2000_SPA SCI_alvar_BD
-        description: Natura2000 från naturvardsverket, kod 103 i GISS
-        typ: naturvardsverket_shp
-        plugin: zip_shapefile
-        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
-        enabled: true
-        shp_filename: SCI_alvar_BD_lan.shp
-        field_mapping:
-          source_id_column: $SITE_CODE
-          klass: natura2000_spa
-          grupp:
-          typ:
-          leverantor: nvv
-
-      - id: natura2000_spa_sci_ej_alvar_rikstackande
-        name: Natura2000_SPA SCI_ej_alvar_rikstackande
-        description: Natura2000 från naturvardsverket, kod 103 i GISS
-        typ: naturvardsverket_shp
-        plugin: zip_shapefile
-        url: https://geodata.naturvardsverket.se/nedladdning/naturvardsregistret/SPA_Rikstackande.zip
-        enabled: true
-        shp_filename: SCI_ej_alvar_rikstackande.shp
+        shp_filename: SPA_rikstackande.shp
         field_mapping:
           source_id_column: $SITE_CODE
           klass: natura2000_spa
