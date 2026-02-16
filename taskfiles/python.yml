@@ -41,6 +41,16 @@ tasks:
       - cd src && PYTHONPATH=. uv run pydeps g_etl --max-bacon=2 --cluster -o ../docs/images/deps.svg -T svg
       - echo "Genererat docs/images/deps.svg"
 
+  marimo:
+    desc: Starta marimo notebook-editor
+    cmds:
+      - uv run marimo edit notebooks/pipeline.py
+
+  marimo:run:
+    desc: Starta marimo som webapp (read-only)
+    cmds:
+      - uv run marimo run notebooks/pipeline.py
+
   precommit:
     desc: Fixa och verifiera innan commit (format → lint → test)
     cmds:

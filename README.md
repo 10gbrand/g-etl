@@ -86,6 +86,20 @@ task pipeline:export:html      # Interaktiv HTML-karta
 task pipeline:export:kepler    # CSV för Kepler.gl
 ```
 
+### Notebook (marimo)
+
+Interaktiv notebook med dataset-val, pipeline-körning och SQL-utforskning:
+
+```bash
+# Starta notebook-editor
+task py:marimo
+
+# Eller som webapp (read-only, widgets fungerar)
+task py:marimo:run
+```
+
+Se [notebooks/README.md](notebooks/README.md) för mer information.
+
 ### QGIS Plugin
 
 Kör G-ETL direkt i QGIS med full integration:
@@ -124,6 +138,7 @@ tar -xzf g_etl-*.tar.gz
 | [config/readme.md](config/readme.md) | Dataset-konfiguration och field_mapping |
 | [config/datasets.md](config/datasets.md) | Lista över alla dataset |
 | [docker/readme.md](docker/readme.md) | Docker-images, compose-filer, Huey |
+| [notebooks/README.md](notebooks/README.md) | Marimo notebooks (interaktiv pipeline + SQL) |
 | [qgis_plugin/README.md](qgis_plugin/README.md) | QGIS Plugin-dokumentation |
 
 ## Dataset

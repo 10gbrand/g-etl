@@ -98,6 +98,7 @@ class Pipeline:
         extract_only: bool = False,
         transform_only: bool = False,
         on_log: Callable[[str], None] | None = None,
+        on_event: Callable[[PipelineEvent], None] | None = None,
         keep_staging: bool = False,
         save_sql: bool = False,
         auto_export: bool = False,
@@ -159,10 +160,14 @@ class Pipeline:
         parquet_files: list[tuple[str, str]] = []
 
         # Event-callback för progress
+        external_on_event = on_event
+
         def on_event(event: PipelineEvent) -> None:
             if on_log and event.message:
                 prefix = f"[{event.dataset}]" if event.dataset else "[Pipeline]"
                 on_log(f"{prefix} {event.message}")
+            if external_on_event:
+                external_on_event(event)
 
         # === EXTRACT (parallellt) ===
         if not transform_only:

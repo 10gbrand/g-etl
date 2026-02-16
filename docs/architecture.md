@@ -290,10 +290,11 @@ g-etl/
 │   │   ├── geoparquet.py
 │   │   ├── lantmateriet.py
 │   │   └── mssql.py
+│   ├── services/          # Gemensamt service-lager
+│   │   ├── pipeline_runner.py  # GEMENSAM parallell pipeline-logik
+│   │   └── db_session.py       # Databashantering
 │   ├── admin/             # Textual TUI-applikation
-│   │   ├── screens/       # TUI-skärmar
-│   │   └── services/
-│   │       └── pipeline_runner.py  # GEMENSAM parallell pipeline-logik
+│   │   └── screens/       # TUI-skärmar
 │   ├── migrations/        # Migreringssystem
 │   │   ├── cli.py
 │   │   └── migrator.py
@@ -313,6 +314,8 @@ g-etl/
 │       │   ├── 003_mart_compact_h3_cells_template.sql
 │       │   └── 100_mart_h3_index_merged.sql
 │       └── x*.sql                          # Post-pipeline
+├── notebooks/
+│   └── pipeline.py        # Marimo notebook (interaktiv pipeline + SQL)
 ├── data/
 │   ├── raw/               # Parquet-filer från extract
 │   ├── temp/              # Temporära per-dataset DBs
@@ -320,19 +323,24 @@ g-etl/
 └── logs/                  # Pipeline-loggar
 ```
 
-**CLI och TUI delar samma `PipelineRunner`** i `src/g_etl/services/pipeline_runner.py`.
+**Alla fyra gränssnitt delar samma `PipelineRunner`** i `src/g_etl/services/pipeline_runner.py`.
 Det finns ingen duplicerad pipeline-logik.
 
 ```text
-CLI/TUI-arkitektur:
+Gränssnitt → PipelineRunner:
 
-┌──────────────────────┐     ┌──────────────────────┐
-│  CLI (pipeline.py)   │     │  TUI (admin/app.py)  │
-│  └── task run        │     │  └── Textual UI      │
-└──────────┬───────────┘     └──────────┬───────────┘
-           │                            │
-           └────────────┬───────────────┘
-                        ▼
+┌──────────────────────┐  ┌──────────────────────┐
+│  CLI (pipeline.py)   │  │  TUI (admin/app.py)  │
+│  └── task run        │  │  └── Textual UI      │
+└──────────┬───────────┘  └──────────┬───────────┘
+           │                         │
+┌──────────┴───────────┐  ┌──────────┴───────────┐
+│  Notebook (marimo)   │  │  QGIS Plugin         │
+│  └── task py:marimo  │  │  └── qgis_runner.py  │
+└──────────┬───────────┘  └──────────┬───────────┘
+           │                         │
+           └────────┬────────────────┘
+                    ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  PipelineRunner (services/pipeline_runner.py)                    │
 │  ├── run_parallel_extract()    # Parallell datahämtning        │

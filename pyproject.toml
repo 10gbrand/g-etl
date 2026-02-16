@@ -36,9 +36,11 @@ viz = [
 [dependency-groups]
 dev = [
     "ruff>=0.6.0",
- "pytest>=8.0.0",
- "harlequin>=2.0.0",
- "pydeps>=3.0.2",
+    "pytest>=8.0.0",
+    "harlequin>=2.0.0",
+    "pydeps>=3.0.2",
+    "marimo>=0.19.11",
+    "folium>=0.17.0",
 ]
 
 [tool.ruff]
