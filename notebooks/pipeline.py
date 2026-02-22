@@ -390,9 +390,7 @@ def table_preview(mo, open_conn, tables_widget):
             if _points:
                 import folium
 
-                _m = folium.Map(
-                    location=[63, 17], zoom_start=5, tiles="CartoDB positron"
-                )
+                _m = folium.Map(location=[63, 17], zoom_start=5, tiles="CartoDB positron")
                 for _lat, _lng in _points:
                     if _lat and _lng:
                         folium.CircleMarker(
@@ -408,17 +406,14 @@ def table_preview(mo, open_conn, tables_widget):
         # Sample-data (exkludera geometri-kolumner)
         _non_geo_cols = [c for c in _col_names if c not in ("geom", "geometry")]
         _sample_cols = ", ".join(f'"{c}"' for c in sorted(_non_geo_cols)[:15])
-        _sample = _conn.execute(
-            f"SELECT {_sample_cols} FROM {_full_name} LIMIT 10"
-        ).fetchdf()
+        _sample = _conn.execute(f"SELECT {_sample_cols} FROM {_full_name} LIMIT 10").fetchdf()
 
         # Förpopulerad SQL-query
         _suggested_sql = f"SELECT * FROM {_full_name} LIMIT 100"
 
         # Kolumnlista formaterad
         _col_list = ", ".join(
-            f"`{row['column_name']}` ({row['column_type']})"
-            for _, row in _columns.iterrows()
+            f"`{row['column_name']}` ({row['column_type']})" for _, row in _columns.iterrows()
         )
 
     finally:
@@ -431,7 +426,7 @@ def table_preview(mo, open_conn, tables_widget):
 ## Preview: `{_full_name}`
 
 **Rader:** {_row_count:,} | **Kolumner:** {len(_col_names)}
-| **Geo:** {_geo_type or 'ingen'}
+| **Geo:** {_geo_type or "ingen"}
 
 {_col_list}
 
