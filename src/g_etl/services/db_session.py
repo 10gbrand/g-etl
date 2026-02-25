@@ -269,6 +269,11 @@ def get_data_stats() -> dict:
     settings.RAW_DIR.mkdir(parents=True, exist_ok=True)
     settings.LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Temporära databaser (data/temp/)
+    temp_files = list(settings.TEMP_DIR.glob("*.duckdb")) if settings.TEMP_DIR.exists() else []
+    temp_count = len(temp_files)
+    temp_size = sum(f.stat().st_size for f in temp_files) // (1024 * 1024)
+
     # Databaser
     db_files = list(settings.DATA_DIR.glob(f"*{settings.DB_EXTENSION}"))
     db_count = len(db_files)
@@ -295,6 +300,8 @@ def get_data_stats() -> dict:
     subdir_size = subdir_size // (1024 * 1024)
 
     return {
+        "temp_count": temp_count,
+        "temp_size_mb": temp_size,
         "db_count": db_count,
         "db_size_mb": db_size,
         "parquet_count": parquet_count,

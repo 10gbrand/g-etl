@@ -598,7 +598,7 @@ pipelines:
         plugin: zip_geopackage
         url: ./input_data/underlag_taktiskplan.zip
         layer: UNDERLAG_TAKTPLAN
-        enabled: false
+        enabled: true
         field_mapping:
           source_id_column: $BETECKNING
           klass: klass

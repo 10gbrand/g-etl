@@ -3,7 +3,9 @@
 import os
 from pathlib import Path
 
-from g_etl.settings import Settings, settings
+import yaml
+
+from g_etl.settings import Settings, _load_config, settings
 
 
 class TestSettings:
@@ -15,12 +17,13 @@ class TestSettings:
 
     def test_default_paths(self):
         """Kontrollera att default-sökvägar är korrekta."""
-        assert settings.DATA_DIR == Path("data")
-        assert settings.RAW_DIR == Path("data/raw")
-        assert settings.TEMP_DIR == Path("data/temp")
-        assert settings.LOGS_DIR == Path("logs")
-        assert settings.LOG_SQL_DIR == Path("data/log_sql")
-        assert settings.SQL_DIR == Path("sql")
+        s = Settings(config_path=Path("nonexistent.yml"))
+        assert s.DATA_DIR == Path("data")
+        assert s.RAW_DIR == Path("data/raw")
+        assert s.TEMP_DIR == Path("data/temp")
+        assert s.LOGS_DIR == Path("logs")
+        assert s.LOG_SQL_DIR == Path("data/log_sql")
+        assert s.SQL_DIR == Path("sql")
 
     def test_db_settings(self):
         """Kontrollera databas-inställningar."""
@@ -69,72 +72,69 @@ class TestSettings:
         """Kontrollera sökväg till datasets.yml."""
         assert settings.datasets_path == Path("config/datasets.yml")
 
-    def test_get_db_path_with_name(self, temp_dir, monkeypatch):
+    def test_get_db_path_with_name(self, temp_dir):
         """Testa get_db_path med specifikt namn."""
-        test_settings = Settings()
-        monkeypatch.setattr(test_settings, "DATA_DIR", temp_dir)
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir
 
         db_path = test_settings.get_db_path("test_db")
         assert db_path == temp_dir / "test_db.duckdb"
 
-    def test_get_db_path_without_name(self, temp_dir, monkeypatch):
+    def test_get_db_path_without_name(self, temp_dir):
         """Testa get_db_path utan namn (genererar tidsstämpel)."""
-        test_settings = Settings()
-        monkeypatch.setattr(test_settings, "DATA_DIR", temp_dir)
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir
 
         db_path = test_settings.get_db_path()
         assert db_path.suffix == ".duckdb"
         assert "warehouse_" in db_path.name
 
-    def test_get_temp_db_path(self, temp_dir, monkeypatch):
+    def test_get_temp_db_path(self, temp_dir):
         """Testa get_temp_db_path."""
-        test_settings = Settings()
-        monkeypatch.setattr(test_settings, "TEMP_DIR", temp_dir)
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir
 
         db_path = test_settings.get_temp_db_path("test_dataset")
-        assert db_path == temp_dir / "test_dataset.duckdb"
+        assert db_path == temp_dir / "temp" / "test_dataset.duckdb"
 
-    def test_ensure_dirs(self, temp_dir, monkeypatch):
+    def test_ensure_dirs(self, temp_dir):
         """Testa att ensure_dirs skapar kataloger."""
-        test_settings = Settings()
-        data_dir = temp_dir / "data"
-        raw_dir = temp_dir / "data/raw"
-        temp_subdir = temp_dir / "data/temp"
-        logs_dir = temp_dir / "logs"
-
-        monkeypatch.setattr(test_settings, "DATA_DIR", data_dir)
-        monkeypatch.setattr(test_settings, "RAW_DIR", raw_dir)
-        monkeypatch.setattr(test_settings, "TEMP_DIR", temp_subdir)
-        monkeypatch.setattr(test_settings, "LOGS_DIR", logs_dir)
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir / "data"
+        test_settings.INPUT_DATA_DIR = temp_dir / "input_data"
+        test_settings.LOGS_DIR = temp_dir / "logs"
 
         test_settings.ensure_dirs()
 
-        assert data_dir.exists()
-        assert raw_dir.exists()
-        assert temp_subdir.exists()
-        assert logs_dir.exists()
+        assert (temp_dir / "data").exists()
+        assert (temp_dir / "data" / "raw").exists()
+        assert (temp_dir / "data" / "temp").exists()
+        assert (temp_dir / "logs").exists()
 
-    def test_cleanup_temp_dbs(self, temp_dir, monkeypatch):
+    def test_cleanup_temp_dbs(self, temp_dir):
         """Testa att cleanup_temp_dbs tar bort temporära databaser."""
-        test_settings = Settings()
-        monkeypatch.setattr(test_settings, "TEMP_DIR", temp_dir)
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir
 
-        # Skapa några dummy-filer
-        (temp_dir / "test1.duckdb").touch()
-        (temp_dir / "test2.duckdb").touch()
-        (temp_dir / "keep.txt").touch()
+        # Skapa temp-katalog med dummy-filer
+        temp_subdir = temp_dir / "temp"
+        temp_subdir.mkdir()
+        (temp_subdir / "test1.duckdb").touch()
+        (temp_subdir / "test2.duckdb").touch()
+        (temp_subdir / "keep.txt").touch()
 
         test_settings.cleanup_temp_dbs()
 
-        assert not (temp_dir / "test1.duckdb").exists()
-        assert not (temp_dir / "test2.duckdb").exists()
-        assert (temp_dir / "keep.txt").exists()  # Ska inte tas bort
+        assert not (temp_subdir / "test1.duckdb").exists()
+        assert not (temp_subdir / "test2.duckdb").exists()
+        assert (temp_subdir / "keep.txt").exists()  # Ska inte tas bort
 
-    def test_cleanup_log_sql(self, temp_dir, monkeypatch):
+    def test_cleanup_log_sql(self, temp_dir):
         """Testa att cleanup_log_sql rensar och återskapar katalogen."""
-        test_settings = Settings()
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir
+
         log_sql_dir = temp_dir / "log_sql"
-        monkeypatch.setattr(test_settings, "LOG_SQL_DIR", log_sql_dir)
 
         # Skapa befintlig katalog med filer
         (log_sql_dir / "old_dataset").mkdir(parents=True)
@@ -146,15 +146,120 @@ class TestSettings:
         assert log_sql_dir.exists()
         assert not (log_sql_dir / "old_dataset").exists()
 
-    def test_cleanup_log_sql_creates_dir(self, temp_dir, monkeypatch):
+    def test_cleanup_log_sql_creates_dir(self, temp_dir):
         """Testa att cleanup_log_sql skapar katalogen om den inte finns."""
-        test_settings = Settings()
+        test_settings = Settings(config_path=Path("nonexistent.yml"))
+        test_settings.DATA_DIR = temp_dir
+
         log_sql_dir = temp_dir / "log_sql"
-        monkeypatch.setattr(test_settings, "LOG_SQL_DIR", log_sql_dir)
 
         assert not log_sql_dir.exists()
         test_settings.cleanup_log_sql()
         assert log_sql_dir.exists()
+
+
+class TestConfigLoading:
+    """Tester för YAML-konfigurationsladdning."""
+
+    def test_missing_config_uses_defaults(self):
+        """Saknad config.yml ger standardvärden."""
+        s = Settings(config_path=Path("nonexistent.yml"))
+        assert s.DATA_DIR == Path("data")
+        assert s.H3_RESOLUTION == 13
+        assert s.DB_PREFIX == "warehouse"
+        assert s.SOURCE_CRS == "EPSG:3006"
+
+    def test_loads_from_yaml(self, tmp_path):
+        """Värden laddas korrekt från YAML-fil."""
+        config = {
+            "data_dir": "/mnt/e/g-etl",
+            "db_prefix": "mydb",
+            "db_keep_count": 5,
+            "h3": {
+                "resolution": 10,
+                "polyfill_resolution": 8,
+                "line_resolution": 9,
+                "point_resolution": 10,
+                "line_buffer_meters": 20,
+            },
+            "max_concurrent_extracts": 16,
+            "max_concurrent_sql": 8,
+            "extract_timeout_seconds": 600,
+            "source_crs": "EPSG:4326",
+            "target_crs": "EPSG:3006",
+            "logs_dir": "/var/log/g-etl",
+        }
+        config_file = tmp_path / "config.yml"
+        config_file.write_text(yaml.dump(config))
+
+        s = Settings(config_path=config_file)
+
+        assert s.DATA_DIR == Path("/mnt/e/g-etl")
+        assert s.RAW_DIR == Path("/mnt/e/g-etl/raw")
+        assert s.DB_PREFIX == "mydb"
+        assert s.DB_KEEP_COUNT == 5
+        assert s.H3_RESOLUTION == 10
+        assert s.H3_POLYFILL_RESOLUTION == 8
+        assert s.H3_LINE_RESOLUTION == 9
+        assert s.H3_POINT_RESOLUTION == 10
+        assert s.H3_LINE_BUFFER_METERS == 20
+        assert s.MAX_CONCURRENT_EXTRACTS == 16
+        assert s.MAX_CONCURRENT_SQL == 8
+        assert s.EXTRACT_TIMEOUT_SECONDS == 600
+        assert s.SOURCE_CRS == "EPSG:4326"
+        assert s.TARGET_CRS == "EPSG:3006"
+        assert s.LOGS_DIR == Path("/var/log/g-etl")
+
+    def test_env_var_overrides_yaml(self, tmp_path, monkeypatch):
+        """Miljövariabel G_ETL_DATA_DIR har högre prioritet än YAML."""
+        config = {"data_dir": "/from/yaml"}
+        config_file = tmp_path / "config.yml"
+        config_file.write_text(yaml.dump(config))
+
+        monkeypatch.setenv("G_ETL_DATA_DIR", "/from/env")
+        s = Settings(config_path=config_file)
+
+        assert s.DATA_DIR == Path("/from/env")
+        assert s.RAW_DIR == Path("/from/env/raw")
+
+    def test_partial_config(self, tmp_path):
+        """Partiell config - bara H3-sektion, övriga får defaults."""
+        config = {"h3": {"resolution": 10}}
+        config_file = tmp_path / "config.yml"
+        config_file.write_text(yaml.dump(config))
+
+        s = Settings(config_path=config_file)
+
+        # H3-resolution ändrad
+        assert s.H3_RESOLUTION == 10
+        # Övriga H3 behåller defaults
+        assert s.H3_POLYFILL_RESOLUTION == 11
+        # Andra sektioner behåller defaults
+        assert s.DATA_DIR == Path("data")
+        assert s.DB_PREFIX == "warehouse"
+
+    def test_empty_config_file(self, tmp_path):
+        """Tom config-fil ger standardvärden."""
+        config_file = tmp_path / "config.yml"
+        config_file.write_text("")
+
+        s = Settings(config_path=config_file)
+        assert s.DATA_DIR == Path("data")
+        assert s.H3_RESOLUTION == 13
+
+    def test_load_config_returns_empty_for_missing_file(self):
+        """_load_config returnerar tom dict för saknad fil."""
+        result = _load_config(Path("nonexistent.yml"))
+        assert result == {}
+
+    def test_infrastructure_constants_unchanged(self):
+        """Infrastrukturkonstanter påverkas inte av config."""
+        s = Settings(config_path=Path("nonexistent.yml"))
+        assert s.DB_EXTENSION == ".duckdb"
+        assert "spatial" in s.DUCKDB_EXTENSIONS
+        assert "raw" in s.DUCKDB_SCHEMAS
+        assert s.SQL_DIR == Path("sql")
+        assert s.CONFIG_DIR == Path("config")
 
 
 class TestCpuCount:

@@ -754,6 +754,13 @@ class PipelineScreen(Screen):
             f"{stats['subdir_count']} övriga filer ({stats['subdir_size_mb']} MB)"
         )
 
+        # Rensa temporära databaser (data/temp/)
+        settings.cleanup_temp_dbs()
+        temp_count = stats.get("temp_count", 0)
+        temp_size = stats.get("temp_size_mb", 0)
+        if temp_count > 0:
+            self.log_message(f"Tog bort {temp_count} temp-databaser ({temp_size} MB)")
+
         # Rensa databaser
         db_count, db_size = cleanup_all_databases()
         if db_count > 0:
@@ -776,11 +783,11 @@ class PipelineScreen(Screen):
                 f"Tog bort {sub_count} filer från export/heatmaps/log_sql ({sub_size} MB)"
             )
 
-        total_count = db_count + pq_count + log_count + sub_count
+        total_count = temp_count + db_count + pq_count + log_count + sub_count
         if total_count == 0:
             self.log_message("Inga filer att rensa")
         else:
-            total_size = db_size + pq_size + log_size + sub_size
+            total_size = temp_size + db_size + pq_size + log_size + sub_size
             self.log_message(f"Totalt rensat: {total_count} filer ({total_size} MB)")
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:

@@ -1,0 +1,34 @@
+# G-ETL Konfiguration
+#
+# Alla inställningar är valfria - standardvärden används om de utelämnas.
+# Prioritet: miljövariabler > config.yml > standardvärden
+
+# === Sökvägar ===
+# data_dir kan också styras via miljövariabel G_ETL_DATA_DIR
+# data_dir: data
+# data_dir: /mnt/e/g-etl/data
+# input_data_dir: input_data
+# logs_dir: logs
+
+# === Databas ===
+# db_prefix: warehouse
+# db_keep_count: 3
+
+# === H3 Spatial Index ===
+# https://h3geo.org/docs/core-library/restable/
+h3:
+  resolution: 13           # Centroid (≈ 43.9 m²)
+  polyfill_resolution: 11  # Polygoner (≈ 2149 m²)
+  line_resolution: 12      # Linjer (≈ 307 m²)
+  point_resolution: 13     # Punkter
+  line_buffer_meters: 10   # Buffer-radie för linjer (meter)
+
+# === Pipeline ===
+# Standardvärden baseras på antal CPU-kärnor.
+# max_concurrent_extracts: 8
+# max_concurrent_sql: 4
+# extract_timeout_seconds: 300
+
+# === Koordinatsystem ===
+# source_crs: "EPSG:3006"
+# target_crs: "EPSG:4326"

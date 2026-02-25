@@ -1,5 +1,9 @@
 version: "3"
 
+# DATA_DIR kan överstyras med G_ETL_DATA_DIR (t.ex. /mnt/e/g-etl)
+vars:
+  DATA_DIR: '{{.G_ETL_DATA_DIR | default "data"}}'
+
 includes:
   py: ./taskfiles/python.yml
   admin: ./taskfiles/admin.yml
@@ -16,7 +20,7 @@ tasks:
   hq:
     desc: Starta Harlequin (DuckDB GUI)
     cmds:
-      - uv run harlequin data/warehouse.duckdb
+      - uv run harlequin {{.DATA_DIR}}/warehouse.duckdb
 
   hq_f:
     desc: Öppna Parquet-fil/Duckdb-fil i Harlequin (task hq_parquet -- <fil>)

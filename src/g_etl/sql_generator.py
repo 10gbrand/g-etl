@@ -53,11 +53,11 @@ class DatasetConfig:
     # Fältmappning (från field_mapping)
     source_id_column: str = ""
     geometry_column: str = "geom"
-    h3_center_resolution: int = 13
-    h3_polyfill_resolution: int = 11
-    h3_line_resolution: int = 12
-    h3_point_resolution: int = 13
-    h3_line_buffer_meters: int = 10
+    h3_center_resolution: int = field(default_factory=lambda: settings.H3_RESOLUTION)
+    h3_polyfill_resolution: int = field(default_factory=lambda: settings.H3_POLYFILL_RESOLUTION)
+    h3_line_resolution: int = field(default_factory=lambda: settings.H3_LINE_RESOLUTION)
+    h3_point_resolution: int = field(default_factory=lambda: settings.H3_POINT_RESOLUTION)
+    h3_line_buffer_meters: int = field(default_factory=lambda: settings.H3_LINE_BUFFER_METERS)
     klass: str = ""
     grupp: str = ""
     typ: str = ""
@@ -98,11 +98,13 @@ class DatasetConfig:
             pipeline=config.get("pipeline", ""),
             source_id_column=fm.get("source_id_column", ""),
             geometry_column=fm.get("geometry_column", "geom"),
-            h3_center_resolution=fm.get("h3_center_resolution", 13),
-            h3_polyfill_resolution=fm.get("h3_polyfill_resolution", 11),
-            h3_line_resolution=fm.get("h3_line_resolution", 12),
-            h3_point_resolution=fm.get("h3_point_resolution", 13),
-            h3_line_buffer_meters=fm.get("h3_line_buffer_meters", 10),
+            h3_center_resolution=fm.get("h3_center_resolution", settings.H3_RESOLUTION),
+            h3_polyfill_resolution=fm.get(
+                "h3_polyfill_resolution", settings.H3_POLYFILL_RESOLUTION
+            ),
+            h3_line_resolution=fm.get("h3_line_resolution", settings.H3_LINE_RESOLUTION),
+            h3_point_resolution=fm.get("h3_point_resolution", settings.H3_POINT_RESOLUTION),
+            h3_line_buffer_meters=fm.get("h3_line_buffer_meters", settings.H3_LINE_BUFFER_METERS),
             klass=fm.get("klass", ""),
             grupp=fm.get("grupp", ""),
             typ=fm.get("typ", ""),

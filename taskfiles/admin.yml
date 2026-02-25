@@ -1,5 +1,8 @@
 version: '3'
 
+vars:
+  DATA_DIR: '{{.G_ETL_DATA_DIR | default "data"}}'
+
 tasks:
   run:
     desc: Starta admin TUI lokalt
@@ -37,7 +40,7 @@ tasks:
         # Starta container med data-katalogen monterad
         docker run -d --name g-etl-huey \
           -p 8080:80 \
-          -v "{{.USER_WORKING_DIR}}/data:/data:ro" \
+          -v "{{.USER_WORKING_DIR}}/{{.DATA_DIR}}:/data:ro" \
           g-etl-huey
 
         echo ""
