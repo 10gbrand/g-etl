@@ -6,7 +6,7 @@
 # === Sökvägar ===
 # data_dir kan också styras via miljövariabel G_ETL_DATA_DIR
 # data_dir: data
-# data_dir: /mnt/e/g-etl/data
+data_dir: /mnt/e/g-etl/data
 # input_data_dir: input_data
 # logs_dir: logs
 
