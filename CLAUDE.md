@@ -38,6 +38,10 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 - `task py:ci` - Kör samma kontroller som CI (format check, lint, test)
 - `task py:precommit` - **Kör innan commit** (fix → test)
 
+**Notebook (marimo):**
+- `task py:marimo` - Starta marimo notebook-editor
+- `task py:marimo:run` - Starta marimo som webapp (read-only)
+
 **Database:**
 - `task db:cli` - Öppna DuckDB REPL
 - `task db:migrate` - Kör väntande statiska migrationer (001-003)
@@ -72,15 +76,16 @@ Projektet använder Go Task som task runner. Alla kommandon körs med `task <kom
 
 ## Architecture
 
-Tre gränssnitt delar samma `PipelineRunner` för parallell exekvering:
+Fyra gränssnitt delar samma `PipelineRunner` för parallell exekvering:
 
 ```text
 CLI (pipeline.py) ─────┐
                        │
-TUI (admin/app.py) ────┼──→ PipelineRunner → Plugins → DuckDB
-                       │                          ↓
-QGIS Plugin ───────────┘                   Parallell Transform
-                                           (temp-DB per dataset)
+TUI (admin/app.py) ────┤
+                       ├──→ PipelineRunner → Plugins → DuckDB
+Notebook (marimo) ─────┤                          ↓
+                       │                   Parallell Transform
+QGIS Plugin ───────────┘                   (temp-DB per dataset)
                                                   ↓
                                            Merge → warehouse.duckdb
                                                   ↓
@@ -95,6 +100,7 @@ QGIS Plugin ───────────┘                   Parallell Tra
 |------------|--------|------------|
 | **CLI** | Schemaläggning, batch, CI/CD | `task run`, cron-jobb |
 | **TUI** | Interaktiv kontroll, progress | `task admin:run` |
+| **Notebook** | Utforskning, SQL, ad-hoc analys | `task py:marimo` |
 | **QGIS** | Kartanalys, visualisering | Plugin i QGIS |
 
 **Parallell Transform-arkitektur:**
@@ -146,6 +152,7 @@ OBS: Staging-scheman skapas dynamiskt. Root-templates genererar `staging_NNN`, p
 - `src/g_etl/plugins/` - Datakälla-plugins (wfs, lantmateriet, geoparquet, zip_geopackage, zip_shapefile, mssql)
 - `src/g_etl/sql_generator.py` - Genererar SQL från mallar + datasets.yml
 - `src/g_etl/export.py` - Export (CSV, GeoJSON, HTML, Parquet, GeoPackage, FlatGeobuf)
+- `notebooks/pipeline.py` - Marimo notebook (interaktiv pipeline + SQL explorer)
 - `qgis_plugin/` - QGIS-plugin (ren Python, installerar dependencies automatiskt)
 - `src/g_etl/migrations/` - Migreringssystem (Migrator, CLI)
 - `sql/migrations/` - Alla SQL-filer (init + templates)
